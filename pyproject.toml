@@ -1,0 +1,50 @@
+[project]
+name = "sparring"
+version = "0.1.0"
+description = "Boxing sparring video analysis: pose tracking, move detection and coaching feedback"
+readme = "README.md"
+authors = [
+    { name = "pongpatapee", email = "pongpatapee1021@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "lap>=0.5.13",
+    "numpy>=2.5.3",
+    "onnxruntime>=1.30.0",
+    "opencv-python>=5.0.0.93",
+    "pandas>=3.0.6",
+    "pyarrow>=25.0.1",
+    "pydantic>=2.13.5",
+    "pyyaml>=6.0.3",
+    "rtmlib>=0.0.16",
+    "scipy>=1.18.1",
+    "typer>=0.27.2",
+    "ultralytics>=8.4.165",
+]
+
+[build-system]
+requires = ["uv_build>=0.10.11,<0.11.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.16.9",
+]
+
+[project.scripts]
+sparring = "sparring.cli:app"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "NPY"]
+# Line length is enforced by `ruff format`; long user-facing strings are allowed.
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["slow: end-to-end tests that need the sample video and model weights"]
+addopts = "-m 'not slow'"

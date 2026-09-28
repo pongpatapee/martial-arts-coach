@@ -1,0 +1,41 @@
+# Media (downloaded/test footage — often copyrighted, and large)
+*.mp4
+*.mov
+*.mkv
+*.webm
+*.avi
+*.m4a
+*.part
+*.ytdl
+
+# Generated outputs
+output/
+outputs/
+frames/
+
+# Model weights
+*.pt
+*.pth
+*.onnx
+*.task
+*.tflite
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+runs/
+models/
+labels/*.local.json
