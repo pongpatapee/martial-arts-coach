@@ -1,0 +1,20 @@
+{
+  "video": "test/video/boxing.mp4",
+  "labeller": "Claude, from 15 fps contact sheets (scripts/contact_sheet.py). Approximate: please verify against the real video.",
+  "fighters": {"A": "gold headgear, white top", "B": "red headgear, black top"},
+  "segment": [0.0, 6.0],
+  "notes": "type 'punch' = punch of unclear type; it only counts toward the 'punch (any)' score.",
+  "events": [
+    {"fighter": "A", "type": "jab", "t": 1.07},
+    {"fighter": "A", "type": "punch", "t": 1.4},
+    {"fighter": "A", "type": "punch", "t": 1.7},
+    {"fighter": "A", "type": "punch", "t": 2.05},
+    {"fighter": "A", "type": "punch", "t": 4.77},
+    {"fighter": "A", "type": "punch", "t": 5.1},
+    {"fighter": "A", "type": "punch", "t": 5.5},
+    {"fighter": "B", "type": "punch", "t": 5.0},
+    {"fighter": "B", "type": "punch", "t": 5.6},
+    {"fighter": "B", "type": "duck", "t": 2.4},
+    {"fighter": "A", "type": "guard_drop", "t": 4.2}
+  ]
+}
