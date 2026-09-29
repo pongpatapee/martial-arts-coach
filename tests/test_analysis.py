@@ -99,3 +99,17 @@ def test_report_coaching(session):
 def test_report_markdown_renders(session):
     md = render_markdown(session)
     assert "## Fighter A" in md and "## Fighter B" in md and "Carries the rear hand low" in md
+
+
+def test_events_json_is_strict_json(tmp_path):
+    import json
+
+    from sparring.events.base import load_events, save_events
+
+    path = tmp_path / "events.json"
+    save_events([Event("A", "slip", 0.9, 1.0, 1.1, evidence={"retreat_tl": float("nan")})], path)
+    assert (
+        json.loads(path.read_text(), parse_constant=lambda c: 1 / 0)[0]["evidence"]["retreat_tl"]
+        is None
+    )
+    assert load_events(path)[0].type == "slip"

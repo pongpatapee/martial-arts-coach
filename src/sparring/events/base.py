@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -35,8 +36,9 @@ class Event:
 
 
 def _round(obj):
+    """Round floats for compact output; non-finite values become null (NaN is not valid JSON)."""
     if isinstance(obj, float):
-        return round(obj, 4)
+        return round(obj, 4) if math.isfinite(obj) else None
     if isinstance(obj, dict):
         return {k: _round(v) for k, v in obj.items()}
     if isinstance(obj, list | tuple):
@@ -46,7 +48,7 @@ def _round(obj):
 
 def save_events(events: list[Event], path: Path) -> None:
     events = sorted(events, key=lambda e: (e.peak_t, e.fighter))
-    path.write_text(json.dumps([_round(asdict(e)) for e in events], indent=1))
+    path.write_text(json.dumps([_round(asdict(e)) for e in events], indent=1, allow_nan=False))
 
 
 def load_events(path: Path) -> list[Event]:
