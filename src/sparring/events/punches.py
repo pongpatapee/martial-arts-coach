@@ -7,6 +7,9 @@ Two candidate routes, because 2D projection hides different punches in different
    wrist speed and reach are heavily foreshortened.
 2. Fast bent-arm swing (hooks). A hook keeps the elbow bent, so route 1 misses it; instead we
    look for a fast wrist with the elbow bent and raised near shoulder height.
+3. Forward reach (straight-arm jabs). Fighters who carry the lead hand low and half-extended jab
+   by snapping the whole arm forward with little change in elbow angle; the wrist's forward
+   reach jumps instead.
 
 Each candidate is grown into a (chamber -> peak -> retraction) segment, gated on speed and
 direction (toward the opponent or up), then classified:
@@ -58,6 +61,7 @@ class _HandSignals:
         self.t = df.t.to_numpy()
         self.wx = _interp(df[f"{hand}_wrist_x"].to_numpy())
         self.wy = _interp(df[f"{hand}_wrist_y"].to_numpy())
+        self.vx = _interp(df[f"{hand}_wrist_vx"].to_numpy())
         self.elbow = _interp(df[f"{hand}_elbow_deg"].to_numpy())
         self.elbow_h = _interp(df[f"{hand}_elbow_above_shoulder"].to_numpy())
         self.speed = _interp(
@@ -96,6 +100,11 @@ def _event(
     )
     if route == "swing":
         conf = 0.4 + 0.4 * min(speed / (2 * cfg.hook_min_speed_tl), 1.0)
+    elif route == "reach":
+        reach = float(sig.wx[j] - sig.wx[s])
+        conf = (
+            0.4 + 0.2 * min(speed / (2 * cfg.reach_min_speed_tl), 1.0) + 0.3 * min(reach / 1.0, 1.0)
+        )
     if not sig.axis_ok[j]:
         conf *= 0.6  # camera looking along the line of attack: direction is ambiguous
     return Event(
@@ -186,10 +195,66 @@ def detect_hand(
         found.append((s, p, min(sig.n - 1, p + half), style, "swing"))
         covered[max(0, s - refractory) : p + half + refractory] = True
 
+    # Route 3: forward reach, only where routes 1-2 found nothing.
+    for s, _, e, _, _ in found:
+        covered[max(0, s - refractory) : e + refractory] = True
+    peaks, _ = find_peaks(sig.wx, prominence=cfg.reach_min_gain_tl, distance=refractory)
+    for j in peaks:
+        if covered[j] or not sig.valid[j]:
+            continue
+        top = sig.wx[j] - 0.05
+        while j > 0 and sig.wx[j - 1] >= top:
+            j -= 1
+        a = max(0, j - windup)
+        s = a + int(np.argmin(sig.wx[a : j + 1]))
+        if s >= j or sig.wx[j] - sig.wx[s] < cfg.reach_min_gain_tl:
+            continue
+        if sig.vx[s : j + 1].max() < cfg.reach_min_speed_tl:
+            continue
+        rise = sig.wy[j] - sig.wy[s]
+        style = (
+            "uppercut"
+            if rise >= cfg.uppercut_min_rise_tl and rise > sig.wx[j] - sig.wx[s]
+            else "straight"
+        )
+        e = j
+        target = sig.wx[j] - 0.5 * (sig.wx[j] - sig.wx[s])
+        while e + 1 < min(sig.n, s + dur) and sig.wx[e] > target:
+            e += 1
+        found.append((s, j, e, style, "reach"))
+        covered[max(0, s - refractory) : e + refractory] = True
+
     return [
         _event(sig, fighter, hand, style, route, s, j, e, cfg)
         for s, j, e, style, route in sorted(found)
     ]
+
+
+def event_at(
+    df: pd.DataFrame, fighter: str, hand: str, frame: int, fps: float, cfg: PunchConfig, route: str
+) -> Event:
+    """Build a punch event for a strike already known to happen near `frame` (e.g. accepted by a
+    learned classifier): segment it and classify its style with the same geometry as the rules."""
+    sig = _HandSignals(df, hand)
+    look = max(1, int(0.1 * fps))
+    a, b = max(0, frame - look), min(sig.n, frame + look + 1)
+    j = a + int(np.argmax(sig.elbow[a:b]))
+    windup = max(1, int(cfg.max_windup_s * fps))
+    w0 = max(0, j - windup)
+    s = w0 + int(np.argmin(sig.elbow[w0 : j + 1]))
+    if s >= j:
+        s = max(0, j - 1)
+    forward, rise = sig.wx[j] - sig.wx[s], sig.wy[j] - sig.wy[s]
+    opening = sig.elbow[j] - sig.elbow[s]
+    if opening >= cfg.min_elbow_opening_deg / 2:
+        style = classify_opening(sig.elbow[j], forward, rise, cfg)
+    else:
+        up = rise >= cfg.uppercut_min_rise_tl and rise >= cfg.uppercut_min_rise_ratio * max(
+            forward, 0
+        )
+        style = "uppercut" if up else "hook"
+    e = _end_of(sig, s, j, max(2, int(cfg.max_duration_s * fps)))
+    return _event(sig, fighter, hand, style, route, s, j, e, cfg)
 
 
 def detect_punches(df: pd.DataFrame, fighter: str, fps: float, cfg: PunchConfig) -> list[Event]:
