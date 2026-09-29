@@ -145,8 +145,13 @@ def _assign(
                 total = total + cfg.w_motion * jump / cfg.max_jump_heights
                 total = total + cfg.w_track_continuity * (tids != s["track_id"])
                 total = np.where(jump > cfg.max_jump_heights, _INF, total)
-            # Background people are smaller than the fighters; penalise shrinking.
+            # Background people are smaller than the fighters; penalise shrinking, and rule out
+            # boxes far too small to be this fighter or to stand next to the partner.
             total = total + 0.5 * np.maximum(0.0, np.log(ref_h[f] / h))
+            total = np.where(h < cfg.min_height_vs_self * ref_h[f], _INF, total)
+            partner = FIGHTERS[1 - fi]
+            if abs(frame - state[partner]["frame"]) <= cfg.reacquire_after_frames:
+                total = np.where(h < cfg.min_height_vs_partner * state[partner]["h"], _INF, total)
             cost[fi] = total
         r_idx, c_idx = linear_sum_assignment(cost)
         for fi, di in zip(r_idx, c_idx, strict=True):

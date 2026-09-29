@@ -45,6 +45,11 @@ class FighterConfig(_Section):
     reacquire_after_frames: int = 15
     # Passes of assign -> rebuild appearance prototype.
     refine_passes: int = 2
+    # Plausibility gates (a gap is better than the wrong person): a fighter's box may not shrink
+    # below this share of its own recent height, nor of its partner's height (sparring partners
+    # stand close together, so perspective cannot make one less than about half the other's size).
+    min_height_vs_self: float = 0.6
+    min_height_vs_partner: float = 0.55
 
 
 class PoseConfig(_Section):
@@ -53,6 +58,13 @@ class PoseConfig(_Section):
         "rtmpose-x_simcc-body7_pt-body7-halpe26_700e-384x288-7fb6e239_20230606.zip"
     )
     input_size: tuple[int, int] = (288, 384)  # (w, h)
+    # Optional 3D pass (RTMW3D). Off by default: see ARCHITECTURE.md for the benchmark result.
+    enable_3d: bool = False
+    model_url_3d: str = (
+        "https://huggingface.co/Soykaf/RTMW3D-x/resolve/main/onnx/"
+        "rtmw3d-x_8xb64_cocktail14-384x288-b0a0eab7_20240626.onnx"
+    )
+    input_size_3d: tuple[int, int] = (288, 384)
     backend: str = "onnxruntime"
     device: str = "cpu"
 
@@ -76,6 +88,8 @@ class KinematicsConfig(_Section):
     # Horizontal separation (TL) below which the camera is looking along the line of attack and
     # the forward axis is unreliable.
     min_axis_separation_tl: float = 0.8
+    # A wrist within this distance (TL) of the opponent's neck/face counts as a clinch grip.
+    clinch_hand_tl: float = 0.6
 
 
 class PunchConfig(_Section):
@@ -92,6 +106,10 @@ class PunchConfig(_Section):
     hook_max_elbow_deg: float = 130.0
     hook_min_elbow_height_tl: float = -0.35  # elbow height relative to the shoulder
     hook_min_travel_tl: float = 0.3
+    # Route 3 (straight-arm "flicker" jabs from a low, already-extended lead hand): the elbow barely
+    # changes, but the wrist shoots forward. Candidate = a peak in forward reach.
+    reach_min_gain_tl: float = 0.45
+    reach_min_speed_tl: float = 3.5
     # Segmentation.
     refractory_s: float = 0.2  # min time between two punches with the same hand
     max_windup_s: float = 0.3
@@ -106,6 +124,50 @@ class PunchConfig(_Section):
     combo_gap_s: float = 0.45
 
 
+class KickConfig(_Section):
+    min_rise_tl: float = 0.5  # the ankle rises at least this far above its chamber height
+    # Footwork lifts the feet too; a kick drives the foot toward the opponent, fast. (On the
+    # boxing sample, steps rose 0.5-0.75 TL but moved < 0.15 TL forward or < 6 TL/s.)
+    min_speed_tl: float = 6.0
+    min_forward_tl: float = 0.3
+    refractory_s: float = 0.4
+    max_windup_s: float = 0.5
+    max_duration_s: float = 0.9
+    # Classification (ankle peak height relative to the hip; + is up).
+    head_kick_min_y_tl: float = 0.9  # about shoulder height
+    body_kick_min_y_tl: float = -0.4  # around the hip / lower ribs
+    teep_min_forward_tl: float = 0.7
+    teep_forward_ratio: float = 1.0  # forward travel at least this multiple of the rise
+    teep_min_knee_opening_deg: float = 40.0
+    # Kicks land with the leg (nearly) straight; a folded leg at the peak is a knee strike.
+    min_knee_deg_at_impact: float = 110.0
+
+
+class CloseRangeConfig(_Section):
+    max_distance_tl: float = 1.6
+    knee_min_rise_tl: float = 0.4
+    knee_min_height_tl: float = -0.3  # knee at least this high relative to the hip
+    knee_max_fold_deg: float = 100.0
+    knee_min_forward_speed_tl: float = 1.5
+    teep_extension_deg: float = 140.0
+    elbow_min_speed_tl: float = 5.0
+    elbow_max_fold_deg: float = 70.0
+    elbow_min_height_tl: float = -0.3
+    # An elbow strike leads with the elbow: it is ahead of the wrist toward the opponent. (A
+    # close hook also has a folded arm, but the fist leads.)
+    elbow_min_lead_tl: float = 0.1
+    clinch_max_distance_tl: float = 1.0
+    clinch_min_s: float = 1.0
+
+
+class DetectionConfig(_Section):
+    # Strike detector for punches: "rules", "ensemble" (rules + learned second opinion),
+    # "learned", "hybrid" or "temporal". Learned methods need a model file (`sparring train`);
+    # without one the pipeline falls back to "rules" and says so.
+    method: str = "ensemble"
+    model_path: str | None = None  # default: the bundled model for the discipline, if any
+
+
 class DefenseConfig(_Section):
     window_before_s: float = 0.15
     window_after_s: float = 0.2
@@ -114,6 +176,7 @@ class DefenseConfig(_Section):
     duck_min_drop_tl: float = 0.3
     block_max_wrist_head_tl: float = 0.55
     step_back_min_tl: float = 0.5
+    check_min_knee_rise_tl: float = 0.4  # lead knee lift that counts as checking a kick
 
 
 class FaultConfig(_Section):
@@ -151,13 +214,18 @@ class ReportConfig(_Section):
 
 
 class Config(_Section):
+    # Which martial art the footage is: selects the move set, detectors and coaching rules.
+    discipline: str = "boxing"
     ingest: IngestConfig = IngestConfig()
     detect: DetectConfig = DetectConfig()
     fighters: FighterConfig = FighterConfig()
     pose: PoseConfig = PoseConfig()
     clean: CleanConfig = CleanConfig()
     kinematics: KinematicsConfig = KinematicsConfig()
+    detection: DetectionConfig = DetectionConfig()
     punch: PunchConfig = PunchConfig()
+    kick: KickConfig = KickConfig()
+    close_range: CloseRangeConfig = CloseRangeConfig()
     defense: DefenseConfig = DefenseConfig()
     faults: FaultConfig = FaultConfig()
     report: ReportConfig = ReportConfig()
