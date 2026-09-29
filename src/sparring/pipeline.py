@@ -113,6 +113,34 @@ def stage_pose(ctx: RunContext) -> None:
     track.save(ctx.path("poses.npz"))
 
 
+def stage_pose3d(ctx: RunContext) -> None:
+    """Optional 3D pose on the same fighter boxes (skipped unless pose.enable_3d)."""
+    if not ctx.config.pose.enable_3d:
+        log.info("pose3d: disabled (pose.enable_3d = false)")
+        return
+    from sparring.perception.pose import RTMPose3DEstimator
+
+    assign = pd.read_parquet(ctx.path("fighters.parquet"))
+    estimator = RTMPose3DEstimator(ctx.config.pose)
+    n = ctx.info.n_frames
+    kp = np.full((n, len(FIGHTERS), RTMPose3DEstimator.N_BODY, 3), np.nan, np.float32)
+    sc = np.zeros((n, len(FIGHTERS), RTMPose3DEstimator.N_BODY), np.float32)
+    by_frame = {f: g for f, g in assign.groupby("frame")}
+    for i, img in frames(ctx.video):
+        if i >= n:
+            break
+        g = by_frame.get(i)
+        if g is None:
+            continue
+        k, s = estimator(img, g[["x1", "y1", "x2", "y2"]].to_numpy(np.float32))
+        for j, f in enumerate(g.fighter):
+            kp[i, FIGHTERS.index(f)] = k[j]
+            sc[i, FIGHTERS.index(f)] = s[j]
+        if i % 100 == 0:
+            log.info("pose3d: frame %d/%d", i, n)
+    np.savez_compressed(ctx.path("poses3d.npz"), keypoints=kp, scores=sc)
+
+
 def stage_kinematics(ctx: RunContext) -> None:
     from sparring.kinematics.clean import clean_poses
     from sparring.kinematics.features import compute_features
@@ -122,6 +150,11 @@ def stage_kinematics(ctx: RunContext) -> None:
     kpts = clean_poses(raw.keypoints, raw.scores, ctx.info.fps, ctx.config.clean)
     np.save(ctx.path("poses_clean.npy"), kpts)
     feats = compute_features(kpts, ctx.info.fps, ctx.config.kinematics)
+    if ctx.config.pose.enable_3d and ctx.path("poses3d.npz").exists():
+        from sparring.kinematics.features3d import add_3d_features
+
+        d = np.load(ctx.path("poses3d.npz"))
+        feats = add_3d_features(feats, d["keypoints"], d["scores"], ctx.info.fps, ctx.config.clean)
     feats.to_parquet(ctx.path("features.parquet"), index=False)
 
 
@@ -169,6 +202,7 @@ STAGES: dict[str, Callable[[RunContext], None]] = {
     "track": stage_track,
     "fighters": stage_fighters,
     "pose": stage_pose,
+    "pose3d": stage_pose3d,
     "kinematics": stage_kinematics,
     "events": stage_events,
     "report": stage_report,

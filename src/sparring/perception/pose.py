@@ -34,6 +34,33 @@ class RTMPoseEstimator:
         return kpts.astype(np.float32), scores.astype(np.float32)
 
 
+class RTMPose3DEstimator:
+    """RTMW3D whole-body 3D pose. Returns the 17 COCO body keypoints (same order and names as the
+    first 17 Halpe-26 keypoints) with x, y in image pixels and z as root-relative depth converted
+    to the same pixel scale, so 3D angles and lengths are meaningful."""
+
+    N_BODY = 17
+
+    def __init__(self, cfg: PoseConfig):
+        from rtmlib import RTMPose3d
+
+        self._input = tuple(cfg.input_size_3d)
+        self._model = RTMPose3d(
+            cfg.model_url_3d, model_input_size=self._input, backend=cfg.backend, device=cfg.device
+        )
+
+    def __call__(self, image: np.ndarray, boxes: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        kpts3d, scores, _, kpts2d = self._model(image, bboxes=boxes.tolist())
+        out = np.zeros((len(boxes), self.N_BODY, 3), np.float32)
+        out[..., :2] = kpts2d[:, : self.N_BODY]
+        # z is in [-z_range, z_range] for a crop spanning the model input height; the crop spans
+        # 1.25x the box height in the image (rtmlib's padding).
+        crop_h = (boxes[:, 3] - boxes[:, 1]) * 1.25
+        z = kpts3d[:, : self.N_BODY, 2] / self._model.z_range
+        out[..., 2] = z * (crop_h[:, None] / 2)
+        return out, scores[:, : self.N_BODY].astype(np.float32)
+
+
 @dataclass
 class PoseTrack:
     """Dense per-frame poses for both fighters; NaN / 0 where a fighter was not detected."""

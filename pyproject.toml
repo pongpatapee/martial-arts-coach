@@ -8,6 +8,7 @@ authors = [
 ]
 requires-python = ">=3.12"
 dependencies = [
+    "joblib>=1.6.0",
     "lap>=0.5.13",
     "numpy>=2.5.3",
     "onnxruntime>=1.30.0",
@@ -17,6 +18,7 @@ dependencies = [
     "pydantic>=2.13.5",
     "pyyaml>=6.0.3",
     "rtmlib>=0.0.16",
+    "scikit-learn>=1.9.1",
     "scipy>=1.18.1",
     "typer>=0.27.2",
     "ultralytics>=8.4.165",
