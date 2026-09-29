@@ -1,123 +1,160 @@
 # Architecture
 
-The pipeline turns a sparring video into a pose track for exactly two fighters, a timeline of
-events (punches, defences, faults), and a coaching report.
+The pipeline turns a sparring video into three things:
+- a pose track for exactly two fighters,
+- a timeline of events (strikes, defences, faults),
+- a coaching report.
+
+One engine serves every discipline. A discipline only chooses which detectors run and which
+coaching rules apply.
 
 ```
-video ─► ingest ─► track ─► fighters ─► pose ─► kinematics ─► events ─► report ─► render
-          │          │          │          │          │            │          │         │
-     video.json  tracks.parquet  fighters.parquet  poses.npz  features.parquet  events.json  report.{json,md}  overlay.mp4
-                 appearance.npy  fighters.json     poses_clean.npy
+video ─► ingest ─► track ─► fighters ─► pose ─► [pose3d] ─► kinematics ─► events ─► report ─► render
+                                                               │             │          │
+                                                    features.parquet   events.json   report.{json,md}
 ```
 
-Every stage reads only earlier stages' artifacts from the run directory
-(`src/sparring/pipeline.py`), so you can re-run any suffix with `--from-stage`. GPU/CPU inference
-(track, pose) takes a few minutes. Everything after it takes seconds, which is what makes
-threshold tuning practical.
+Every stage reads only earlier stages' artifacts from the run directory (`pipeline.py`), so any
+suffix can be re-run with `--from-stage`. Inference (track, pose) takes minutes; everything after
+it takes seconds.
 
-## Stages
+## Package map
 
-| Stage | Module | What it does |
+| Area | Modules | Role |
 |---|---|---|
-| ingest | `io/video.py` | Probes fps/size/frame count by decoding, and warns below 50 fps. |
-| track | `perception/detector.py`, `perception/appearance.py` | YOLO11 person detection + BoT-SORT tracking with camera-motion compensation, plus a colour signature per detection. |
-| fighters | `perception/fighters.py` | Picks the two fighters and assigns A/B identities frame by frame. |
-| pose | `perception/pose.py` | Top-down RTMPose-x (Halpe-26, feet included) on each fighter's box, via `rtmlib`/ONNX Runtime. |
-| kinematics | `kinematics/{clean,normalize,features}.py` | Confidence masking, gap filling, One Euro smoothing, body-relative frames, and the per-frame feature table. |
-| events | `events/*.py` | Rule-based detectors that emit `Event`s. |
-| report | `analysis/{metrics,report}.py` | Per-fighter metrics, then ranked strengths and improvement areas with evidence timestamps. |
-| render | `render/overlay.py` | Skeletons, labels and an event timeline strip, re-encoded to H.264 with the original audio. |
+| Perception | `perception/{detector,appearance,fighters,pose}.py` | YOLO11 + BoT-SORT; colour signatures; the two fighters' identities; RTMPose-x (Halpe-26); optional RTMW3D |
+| Kinematics | `kinematics/{clean,normalize,features,features3d}.py` | Gap fill + One Euro smoothing; body-relative frames; per-frame features for hands, legs, head, distance, clinch grips |
+| Taxonomy | `moves.py` | Every move across disciplines: kind (strike/defence/fault/other), limb, lead/rear side, family |
+| Disciplines | `disciplines.py` | boxing / kickboxing / muay_thai: move set + detector list |
+| Detection | `detection/detectors.py` | Detector plugins, run in two stages (strikes, then relational); limb-conflict resolution |
+| Strike methods | `detection/{methods,candidates,windows,temporal,registry,bench}.py` | Interchangeable punch detectors (rules / learned / hybrid / ensemble / temporal), training, the CV benchmark |
+| Rule detectors | `events/{punches,kicks,close_range,defense,faults}.py` | Geometry-based detectors; they emit `Event`s |
+| Evaluation | `evaluation.py` | Labels with confidence and ignore intervals; detection F1 and type accuracy |
+| Coaching | `analysis/metrics.py`, `coaching/{knowledge,engine,llm}.py` | Metrics → rule knowledge base → prioritised feedback, drills, session plan; optional Claude rewrite |
+| Tools | `labeling/`, `render/overlay.py`, `scripts/contact_sheet.py` | Browser labeller, annotated video, labelling contact sheets |
+
+## Extending to another discipline
+
+1. Add any new moves to `moves.py`, e.g. spinning back kick or sweep.
+2. If a move needs a new detector, write it as a function over the feature table that returns
+   `Event`s. Wrap it in a `Detector` in `detection/detectors.py`, with stage 1 for strikes or
+   stage 2 for anything that depends on strikes.
+3. Declare the discipline in `disciplines.py` (its move set and detector list).
+4. Tag or add coaching rules in `coaching/knowledge.py` with `disciplines=...`.
+
+Perception, kinematics, the event model, evaluation, metrics, report and render need no changes.
+Metrics count strikes per limb, so a boxing session simply has no kicks.
 
 ## Key decisions
 
-**Tracker IDs are not identities.** On the sample clip BoT-SORT gives fighter A five different
-track IDs, because IDs switch in clinches, at crossings and during camera pans. `fighters.py`
-works as follows:
+**Tracker IDs are not identities.** BoT-SORT gives fighter A about five IDs on the sample clip,
+because IDs switch in clinches, at crossings and during camera pans. `fighters.py` handles this
+in four steps:
+1. It seeds the fighters from the track pair that is most often large and close together.
+2. It builds HSV-histogram prototypes of the head, torso and leg bands.
+3. It solves a gated Hungarian assignment every frame. The cost is appearance + motion + a
+   tracker-ID tie-breaker, weighted 0.08, which is below the measured ~0.1 same-vs-other
+   appearance margin.
+4. It re-fits the prototypes from confident frames.
 
-1. It seeds the fighters from the track pair that most often appears large and close together.
-2. It builds an HSV-histogram prototype for the head, torso and leg bands of each fighter.
-3. It solves a gated Hungarian assignment in every frame. The cost is appearance plus motion
-   continuity plus a small tracker-ID tie-breaker.
-4. It rebuilds the prototypes from confident assignments and repeats.
+**Plausibility gates:** when a fighter is hidden and reacquired, the new box must be at least 60%
+of the fighter's recent height and at least 55% of the partner's. Before these gates, a spectator
+in a matching black shirt was picked as fighter B for 2 seconds. Leaving a fighter unassigned is
+better than assigning the wrong person.
 
-The tracker-ID weight (0.08) is deliberately below the measured same-vs-other appearance margin
-(10th percentile of about 0.1). Otherwise a tracker ID swap would carry the wrong fighter along.
-A is whichever fighter is on the left when both first appear.
+**Body-relative coordinates.** Features live in a per-fighter frame: origin at the hip midpoint,
++x toward the opponent, +y up, units of torso length (TL). This cancels camera pan, distance and
+screen side. Hands and legs are named lead/rear from stance, so "jab" and "lead teep" mean the
+same thing in either stance.
 
-**Body-relative coordinates.** In `kinematics/normalize.py`, every feature uses a frame with the
-origin at the hip midpoint, +x pointing horizontally at the opponent, +y up, and one torso length
-(TL) as the unit. This cancels hand-held camera pan, distance to the camera, and which side of
-the screen each fighter is on. Torso length is a rolling 80th percentile, because bending and
-turning only ever shorten its projection.
+**Smoothing that keeps strikes.** The One Euro filter uses `beta = 4` (per body-height/s). A
+still joint gets about 1 Hz of smoothing and a punch gets about 9 Hz. With `beta = 0.3`, a jab's
+speed peak was flattened from 8.7 to 5.4 TL/s.
 
-**Lead/rear, not left/right.** Stance comes from which ankle is nearer the opponent, with a
-rolling median and hysteresis. Detectors therefore reason about the lead and rear hand, so a jab
-is always a lead-hand straight.
+**Punches: three geometric routes, because 2D projection hides punches in different ways.**
+1. **Elbow opening (straights, uppercuts).** A punch thrown toward the camera has 2D wrist speed
+   of only 2–3 TL/s, but the elbow angle still snaps from about 60° to over 150°.
+2. **Fast bent-arm swing (hooks).**
+3. **Forward reach (straight-arm "flicker" jabs from a low lead hand).** The elbow barely moves
+   (150°→160°), but the wrist shoots 0.3 → 1.1 TL forward. This route raised recall from 0.59 to
+   0.68.
 
-**Smoothing that keeps punches.** The One Euro filter's cutoff rises with speed
-(`beta = 4` in body-heights per second). A still joint gets about 1 Hz of smoothing, while a
-punch at about 2 body-heights per second gets about 9 Hz. On the sample, `beta = 0.3` flattened
-a jab's wrist-speed peak from 8.7 to 5.4 TL/s.
+**Punches: the ensemble.** Rules are the backbone, and a learned classifier gives a second
+opinion (details under "Detection methods tried").
 
-**Punches are found mainly from the elbow opening, not from wrist speed.** On a phone video many
-punches travel partly toward the camera. Their 2D wrist speed and reach are foreshortened to
-2–3 TL/s, which overlaps ordinary guard adjustments. The 2D elbow angle still visibly snaps from
-about 60° to over 150°. `events/punches.py` therefore uses two routes:
-- **Elbow-opening route:** detects straights and uppercuts from the elbow opening.
-- **Fast bent-arm swing route:** a fast wrist with the elbow bent and raised detects hooks.
+**Kicks, knees and elbows** follow the same pattern, driven by ankle height, knee drive and elbow
+speed. Each has a gate learned from false positives on the boxing clip:
+- **Kicks** must drive the foot at least 0.3 TL toward the opponent at 6 TL/s or more. Footwork
+  steps lift the feet 0.5–0.75 TL but move forward less than 0.15 TL.
+- **Kicks land with the leg nearly straight.** A folded leg at the peak is a knee strike.
+- **Elbow strikes lead with the elbow.** A close hook also folds the arm, but the fist leads.
+- **A teep extends while the knee is still up.** Straightening on the way down is not a teep.
 
-Candidates are gated on travelling toward the opponent or upward, then classified by elbow angle
-and travel direction.
+**Defence is relational.** Each response is classified against a specific opponent strike thrown
+in range:
+- **vs punches:** duck > slip > block > step back > none. The slip threshold is 0.4 TL (about
+  20 cm), calibrated against the no-strike head motion baseline of 0.17–0.24 TL median.
+- **vs leg kicks:** check (lead knee lifted) > step back > block > none.
 
-**Defence depends on the opponent's punch.** `events/defense.py` classifies the defender's
-response to each opponent punch thrown in range, in this order: duck, slip, block, step back,
-no defence. The slip threshold is 0.4 TL, about 20 cm. It was calibrated against head motion in
-windows with no incoming punch: the median there is 0.17–0.24 TL, and the median while a punch
-comes in is 0.45 TL.
+**Counters** are strikes within 0.8 s of the opponent's strike when the fighter wasn't already
+throwing in the 0.5 s before. The first version, without that condition, reported a 71% "counter
+rate" in a fast exchange.
 
-**Faults are sustained states or linked to a punch.** Guard drops, chin up and square stance are
-debounced runs, with short gaps merged. Slow return and over-lean are attached to individual
-punches. The report treats a hand that is low most of the time as a habit ("carries the lead hand
-low: 67% of in-range time") rather than as a count of drops.
+## Detection methods tried (strikes)
 
-**The event seam.** Every detector emits `events.base.Event`
-(fighter, type, start/peak/end, confidence, evidence). `events/detect.py` is the single place that
-composes detectors, so a learned model can replace or augment any of them without touching
-metrics, report or render.
+All numbers are from 5-fold time-blocked cross-validation on the labelled sample
+(`docs/benchmarks/boxing.json`, `sparring bench`).
 
-## Configuration
+| Method | How | F1 | Notes |
+|---|---|---|---|
+| rules | three geometric routes above | 0.68 ± 0.11 | no training data needed |
+| rules_tuned | grid search of rule thresholds on the training folds | 0.65 ± 0.10 | tuning overfits with about 60 training strikes per fold |
+| learned | 95%-recall candidates (elbow/speed peaks) + gradient-boosted trees over time-window features incl. the opponent's reaction; event-level threshold chosen out-of-fold | 0.65 ± 0.08 | highest recall (0.75), low precision |
+| hybrid | learned + rule outputs as features | 0.67 ± 0.08 | type accuracy suffers |
+| **ensemble** | rules, a rule detection is vetoed if the model is confident it is not a strike, a missed candidate is added if the model is confident it is one; thresholds out-of-fold | **0.70 ± 0.09** | best precision (0.75) and type accuracy (0.75); default |
+| temporal | dilated 1D-CNN over the feature sequence → per-frame strike heatmap | 0.67 ± 0.14 | needs more data to shine |
+| + 3D (RTMW3D) | 3D elbow angle / reach as extra features | 0.64 | worse: RTMW3D's depth made a 167° (extended) 2D elbow read 33° |
 
-All thresholds live in `config.py` as a pydantic model, each with its unit and rationale. You can
-override any section with a TOML file:
+**Conclusion:** with one clip, methods differ by less than the fold-to-fold spread. The pieces
+that moved accuracy were:
+- **Fixing perception:** the spectator identity bug.
+- **Better geometry:** the reach route.
+- **Honest evaluation:** don't-care labels and not-assessable intervals.
 
-```toml
-# tuning.toml
-[punch]
-min_elbow_opening_deg = 35.0
-
-[defense]
-slip_min_head_disp_tl = 0.35
-```
-
-`uv run sparring analyze video.mp4 --out runs/x --config tuning.toml --from-stage events`
-
-The resolved config is written to `runs/<name>/config.json` on every run.
+Model choice mattered less. The infrastructure (candidates, featurizer, CV benchmark, `train`,
+labelling tool) is in place, so the learned methods can be re-compared as labelled footage grows.
 
 ## Evaluation
 
-`labels/<video>.json` holds hand labels: fighter, type and time, plus the labelled time segment.
-`sparring eval` matches predictions to labels one-to-one within ±150 ms. A sustained fault
-matches when the label falls inside its interval. The eval prints precision, recall and F1 per
-type, plus a coarse "punch (any)" score that separates detection errors from classification
-errors. `scripts/contact_sheet.py` renders timestamped crop grids that make labelling practical.
+The labels in `labels/<video>.json` record fighter, type, time and confidence.
+- **Generic types:** `punch`, `kick` and `strike` count toward detection only.
+- **Don't care:** low-confidence labels neither reward nor penalise a prediction.
+- **Ignore intervals** mark stretches where a fighter's actions can't be seen, e.g. the camera is
+  behind them.
+- **Matching:** one-to-one within ±150 ms. A sustained fault matches when the label falls inside
+  its interval.
+- **Scores:** `strike (any)` measures detection, and `strike type` measures classification
+  accuracy on matched strikes.
 
-## Extension points
+## Coaching
 
-- **Learned punch/defence classifier:** a skeleton action model (ST-GCN/CTR-GCN/PoseC3D) or a
-  small temporal CNN/transformer over `features.parquet` windows can be added behind the `Event`
-  seam. The rule detectors can bootstrap its training labels.
-- **3D lifting:** e.g. MotionBERT between `pose` and `kinematics`. This would remove the
-  foreshortening problems described above.
-- **Apache-licensed detector:** RTMDet/YOLOX from `rtmlib` behind the `PersonTracker` protocol,
-  replacing Ultralytics, which is AGPL-3.0.
-- **LLM coaching prose:** `report.json` is flat and explicit, so it can be fed to an LLM as-is.
+`analysis/metrics.py` computes rates with explicit denominators (None, not 0, when there is no
+data). `coaching/knowledge.py` holds about 25 rules. Each rule has:
+- a sample-size gate,
+- a score used for ranking,
+- an observation quoting the fighter's numbers, why it matters, and the fix,
+- drills with a dose,
+- evidence event types, from which the watch timestamps are taken,
+- the disciplines it applies to,
+- a `basis` that maps to a stated reliability: strikes (measured), guard (direct measurement,
+  unlabelled), defence (unvalidated), kicks (synthetic only).
+
+`coaching/engine.py` ranks the top three strengths and top three priorities and builds a session
+plan from the priorities' drills. `coaching/llm.py` optionally rewrites the report in a coach's
+voice with Claude (`claude-opus-5-5`, server-side refusal fallback enabled). It is instructed to
+use only facts in the JSON.
+
+## Configuration
+
+All thresholds live in `config.py` (pydantic), each with its unit and rationale. Override any
+section with a TOML file via `--config`. The resolved config is written to each run directory.
