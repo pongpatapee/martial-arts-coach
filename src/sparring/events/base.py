@@ -1,4 +1,4 @@
-"""Event model shared by all detectors (rule-based now, learned later)."""
+"""Event model shared by every detector, rule-based or learned."""
 
 from __future__ import annotations
 
@@ -6,22 +6,9 @@ import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-# Event types, grouped by kind. Detectors must only emit these.
-PUNCHES = ("jab", "cross", "lead_hook", "rear_hook", "lead_uppercut", "rear_uppercut")
-DEFENSES = ("slip", "duck", "block", "step_back", "no_defense")
-FAULTS = ("guard_drop", "slow_return", "chin_up", "square_stance", "over_lean")
-OTHER = ("combination",)
-EVENT_TYPES = PUNCHES + DEFENSES + FAULTS + OTHER
+from sparring.moves import DEFENSES, FAULTS, KICKS, MOVES, PUNCHES, kind_of
 
-
-def kind_of(event_type: str) -> str:
-    if event_type in PUNCHES:
-        return "punch"
-    if event_type in DEFENSES:
-        return "defense"
-    if event_type in FAULTS:
-        return "fault"
-    return "other"
+__all__ = ["DEFENSES", "FAULTS", "KICKS", "PUNCHES", "Event", "load_events", "save_events"]
 
 
 @dataclass
@@ -35,7 +22,7 @@ class Event:
     evidence: dict = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        if self.type not in EVENT_TYPES:
+        if self.type not in MOVES:
             raise ValueError(f"unknown event type {self.type!r}")
 
     @property

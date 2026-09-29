@@ -19,7 +19,7 @@ log = logging.getLogger(__name__)
 
 FIGHTER_BGR = {"A": (0, 215, 255), "B": (255, 0, 200)}
 KIND_BGR = {
-    "punch": (60, 220, 60),
+    "strike": (60, 220, 60),
     "defense": (255, 200, 0),
     "fault": (40, 40, 240),
     "other": (200, 200, 200),
@@ -44,7 +44,7 @@ def _timeline(events: list[Event], width: int, duration: float, row_h: int) -> n
         row = FIGHTERS.index(e.fighter)
         x1 = int(e.start_t / duration * width)
         x2 = max(x1 + 2, int(e.end_t / duration * width))
-        y1 = row * row_h + (4 if e.kind == "punch" else row_h // 2)
+        y1 = row * row_h + (4 if e.kind == "strike" else row_h // 2)
         cv2.rectangle(strip, (x1, y1), (x2, y1 + row_h // 2 - 6), KIND_BGR[e.kind], -1)
     for i, f in enumerate(FIGHTERS):
         _text(strip, f, (6, i * row_h + row_h - 10), 0.9, FIGHTER_BGR[f], 2)

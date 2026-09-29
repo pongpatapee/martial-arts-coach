@@ -37,7 +37,7 @@ def fighter_metrics(
 ) -> dict:
     df = feats[feats.fighter == fighter].sort_values("frame")
     mine = [e for e in events if e.fighter == fighter]
-    punches = [e for e in mine if e.kind == "punch"]
+    punches = [e for e in mine if e.type in PUNCHES]
     by_type = Counter(e.type for e in mine)
     visible_min = df.visible.sum() / fps / 60
     active = df.visible & df.in_range
