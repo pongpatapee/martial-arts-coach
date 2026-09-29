@@ -2,7 +2,8 @@
 
 All positions are in the body frame (see normalize.py): origin at the hip midpoint, +x toward
 the opponent, +y up, units of torso length (TL). Hands are named lead/rear (derived from stance),
-not left/right, so a jab is always a lead-hand straight regardless of stance.
+not left/right, so a jab is always a lead-hand straight regardless of stance. Legs likewise: the
+lead leg is the one nearer the opponent, so a "lead teep" means the same thing in either stance.
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from sparring.kinematics.normalize import BodyFrame, body_frames, hysteresis_sig
 from sparring.skeleton import FIGHTERS, K
 
 HANDS = ("lead", "rear")
+LEGS = ("lead", "rear")
 
 
 def angle_deg(a: np.ndarray, b: np.ndarray, c: np.ndarray) -> np.ndarray:
@@ -49,9 +51,14 @@ def arm_length_tl(bp: dict[str, np.ndarray], side: str) -> float:
 
 
 def fighter_features(
-    kp: np.ndarray, frame: BodyFrame, opp_frame: BodyFrame, fps: float, cfg: KinematicsConfig
+    kp: np.ndarray,
+    frame: BodyFrame,
+    opp_frame: BodyFrame,
+    fps: float,
+    cfg: KinematicsConfig,
+    opp_kp: np.ndarray | None = None,
 ) -> pd.DataFrame:
-    """kp: (T, K, 2) cleaned pixels for one fighter."""
+    """kp / opp_kp: (T, K, 2) cleaned pixels for this fighter and the opponent."""
     t = len(kp)
     bp = {name: frame.to_body(kp[:, i]) for name, i in K.items()}
     out: dict[str, np.ndarray] = {}
@@ -120,6 +127,41 @@ def fighter_features(
     # Hip height above the feet: drops when the fighter sits down into a duck.
     out["hip_height_tl"] = -np.nanmean(np.stack([lead_ankle[:, 1], rear_ankle[:, 1]]), axis=0)
 
+    # Legs (kicks, knees, checks). Heights are relative to the hip midpoint (0) in TL.
+    for leg in LEGS:
+        side = lead_side if leg == "lead" else -lead_side
+        hip = _pick(side, bp["l_hip"], bp["r_hip"])
+        knee = _pick(side, bp["l_knee"], bp["r_knee"])
+        ankle = _pick(side, bp["l_ankle"], bp["r_ankle"])
+        out[f"{leg}_ankle_x"], out[f"{leg}_ankle_y"] = ankle[:, 0], ankle[:, 1]
+        out[f"{leg}_ankle_vx"] = derivative(ankle[:, 0], fps)
+        out[f"{leg}_ankle_vy"] = derivative(ankle[:, 1], fps)
+        out[f"{leg}_knee_x"], out[f"{leg}_knee_y"] = knee[:, 0], knee[:, 1]
+        out[f"{leg}_knee_vx"] = derivative(knee[:, 0], fps)
+        out[f"{leg}_knee_vy"] = derivative(knee[:, 1], fps)
+        out[f"{leg}_knee_deg"] = angle_deg(hip, knee, ankle)
+
+    # Elbow-strike geometry: elbow position/speed relative to the head, for both arms.
+    for hand in HANDS:
+        side = lead_side if hand == "lead" else -lead_side
+        elbow = _pick(side, bp["l_elbow"], bp["r_elbow"])
+        out[f"{hand}_elbow_x"], out[f"{hand}_elbow_y"] = elbow[:, 0], elbow[:, 1]
+        out[f"{hand}_elbow_speed"] = np.hypot(
+            derivative(elbow[:, 0], fps), derivative(elbow[:, 1], fps)
+        )
+
+    # Clinch: how many of this fighter's wrists are on the opponent's head/neck (image space,
+    # normalised by this fighter's torso length).
+    if opp_kp is not None:
+        target = np.nanmean(np.stack([opp_kp[:, K["neck"]], opp_kp[:, K["nose"]]]), axis=0)
+        on = [
+            np.linalg.norm(kp[:, K[w]] - target, axis=-1) / frame.torso_px <= cfg.clinch_hand_tl
+            for w in ("l_wrist", "r_wrist")
+        ]
+        out["hands_on_opponent"] = on[0].astype(float) + on[1].astype(float)
+    else:
+        out["hands_on_opponent"] = np.zeros(t)
+
     df = pd.DataFrame(out)
     df.insert(0, "frame", np.arange(t))
     df.insert(1, "t", np.arange(t) / fps)
@@ -136,7 +178,9 @@ def compute_features(kp: np.ndarray, fps: float, cfg: KinematicsConfig) -> pd.Da
             frames = body_frames(kp, fps, cfg.torso_window_s)
             parts = []
             for fi, f in enumerate(FIGHTERS):
-                df = fighter_features(kp[:, fi], frames[fi], frames[1 - fi], fps, cfg)
+                df = fighter_features(
+                    kp[:, fi], frames[fi], frames[1 - fi], fps, cfg, opp_kp=kp[:, 1 - fi]
+                )
                 df.insert(2, "fighter", f)
                 parts.append(df)
     return pd.concat(parts, ignore_index=True)

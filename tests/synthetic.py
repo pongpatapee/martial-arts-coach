@@ -12,7 +12,6 @@ import numpy as np
 from sparring.skeleton import N_KEYPOINTS, K
 
 FPS = 30.0
-MIRROR_X = 1020.0  # B = A mirrored about x = 510
 
 GUARD: dict[str, tuple[float, float]] = {
     "nose": (415, 440),
@@ -62,9 +61,11 @@ def base_pose() -> np.ndarray:
 
 
 class Scene:
-    """Builds a (T, 2, K, 2) keypoint array for fighters A and B, starting in guard."""
+    """Builds a (T, 2, K, 2) keypoint array for fighters A and B, starting in guard.
+    `gap_tl` is the hip-to-hip distance in torso lengths (default 2.2: punching range)."""
 
-    def __init__(self, seconds: float):
+    def __init__(self, seconds: float, gap_tl: float = 2.2):
+        self.mirror_x = 800.0 + gap_tl * 100.0
         self.n = int(seconds * FPS)
         a = np.repeat(base_pose()[None], self.n, axis=0)
         self.kp = np.stack([a, a.copy()], axis=1)  # (T, 2, K, 2), in A's coordinates
@@ -127,7 +128,22 @@ class Scene:
                 self.kp[fr, fighter, K[n]] = np.array(GUARD[n]) + w * np.array([dx, dy])
         return self
 
+    def animate(self, fighter: int, keyframes: list[tuple[float, dict]]) -> Scene:
+        """Move keypoints through (time, {name: (x, y)}) keyframes with linear interpolation.
+        A keypoint missing from a keyframe is at its guard position (so `(t, {})` = guard)."""
+        names = sorted({n for _, pose in keyframes for n in pose})
+        times = [t for t, _ in keyframes]
+        poses = [{n: pose.get(n, GUARD[n]) for n in names} for _, pose in keyframes]
+        for fr in range(self.frame(times[0]), min(self.n, self.frame(times[-1]) + 1)):
+            t = fr / FPS
+            k = max(0, min(len(times) - 2, int(np.searchsorted(times, t, side="right")) - 1))
+            w = np.clip((t - times[k]) / (times[k + 1] - times[k]), 0, 1)
+            for n in names:
+                a, b = np.array(poses[k][n]), np.array(poses[k + 1][n])
+                self.kp[fr, fighter, K[n]] = a + w * (b - a)
+        return self
+
     def build(self) -> np.ndarray:
         kp = self.kp.copy()
-        kp[:, 1, :, 0] = MIRROR_X - kp[:, 1, :, 0]  # place B on the right, facing left
+        kp[:, 1, :, 0] = self.mirror_x - kp[:, 1, :, 0]  # place B on the right, facing left
         return kp

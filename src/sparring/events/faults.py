@@ -69,6 +69,40 @@ def guard_home(df: pd.DataFrame, hand: str, cfg: FaultConfig) -> np.ndarray:
     )
 
 
+def detect_kick_faults(
+    df: pd.DataFrame, fighter: str, kicks: list[Event], cfg: FaultConfig
+) -> list[Event]:
+    """Kicking with the guard down: while a kick is out, the hand opposite the kicking leg must
+    stay up to cover the face (the kicking-side arm may swing for balance)."""
+    t = df.t.to_numpy()
+    out = []
+    for k in kicks:
+        cover = "rear" if k.evidence.get("leg") == "lead" else "lead"
+        m = (t >= k.start_t) & (t <= k.end_t)
+        below = df[f"{cover}_wrist_below_shoulder"].to_numpy()[m]
+        if (
+            m.any()
+            and np.isfinite(below).any()
+            and np.nanmax(below) > cfg.guard_drop_below_shoulder_tl
+        ):
+            out.append(
+                Event(
+                    fighter=fighter,
+                    type="kick_no_guard",
+                    start_t=k.start_t,
+                    peak_t=k.peak_t,
+                    end_t=k.end_t,
+                    confidence=round(k.confidence * 0.8, 3),
+                    evidence={
+                        "kick": k.type,
+                        "hand": cover,
+                        "max_drop_tl": float(np.nanmax(below)),
+                    },
+                )
+            )
+    return out
+
+
 def detect_faults(
     df: pd.DataFrame, fighter: str, punches: list[Event], fps: float, cfg: FaultConfig
 ) -> list[Event]:

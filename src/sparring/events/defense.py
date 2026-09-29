@@ -37,7 +37,8 @@ def classify_response(
     lateral = float((w.head_x - hx0).abs().max())
     disp = float(np.nanmax(np.hypot(w.head_x - hx0, w.head_y - hy0)))
     at_peak = w.iloc[(w.t - punch.peak_t).abs().argmin()]
-    guard = float(np.nanmin([at_peak.lead_wrist_head_dist, at_peak.rear_wrist_head_dist]))
+    guards = np.array([at_peak.lead_wrist_head_dist, at_peak.rear_wrist_head_dist], float)
+    guard = float(np.nanmin(guards)) if np.isfinite(guards).any() else float("nan")
     retreat = float(w.distance_tl.iloc[-1] - base.distance_tl.mean())
     evidence = {
         "against": punch.type,
@@ -59,14 +60,53 @@ def classify_response(
     return "no_defense", evidence
 
 
+def classify_kick_response(
+    defender: pd.DataFrame, kick: Event, cfg: DefenseConfig
+) -> tuple[str, dict] | None:
+    """Response to a kick: check (lead knee lifted to meet it) > step back > block > nothing.
+    Head kicks are answered like punches (cover, lean away), so only leg/body kicks come here."""
+    w = _window(defender, kick.start_t - cfg.window_before_s, kick.peak_t + cfg.window_after_s)
+    w = w[w.visible]
+    if len(w) < 3:
+        return None
+    base = w.iloc[: max(1, len(w) // 5)]
+    knee_rise = float(w.lead_knee_y.max() - base.lead_knee_y.mean())
+    retreat = float(w.distance_tl.iloc[-1] - base.distance_tl.mean())
+    at_peak = w.iloc[(w.t - kick.peak_t).abs().argmin()]
+    guard = float(np.nanmin([at_peak.lead_wrist_head_dist, at_peak.rear_wrist_head_dist]))
+    evidence = {
+        "against": kick.type,
+        "against_t": kick.peak_t,
+        "knee_rise_tl": knee_rise,
+        "retreat_tl": retreat,
+    }
+    if np.isfinite(knee_rise) and knee_rise >= cfg.check_min_knee_rise_tl:
+        return "check", evidence
+    if np.isfinite(retreat) and retreat >= cfg.step_back_min_tl:
+        return "step_back", evidence
+    if (
+        kick.type.endswith("body_kick")
+        and np.isfinite(guard)
+        and guard <= cfg.block_max_wrist_head_tl
+    ):
+        return "block", evidence
+    return "no_defense", evidence
+
+
 def detect_defense(
-    defender_df: pd.DataFrame, defender: str, opponent_punches: list[Event], cfg: DefenseConfig
+    defender_df: pd.DataFrame, defender: str, opponent_strikes: list[Event], cfg: DefenseConfig
 ) -> list[Event]:
+    """Classify the defender's response to every opponent strike thrown in range."""
     events = []
-    for p in opponent_punches:
+    for p in opponent_strikes:
         if not p.evidence.get("in_range", True):
             continue
-        res = classify_response(defender_df, p, cfg)
+        leg_kick = p.type.endswith(("low_kick", "body_kick"))
+        res = (
+            classify_kick_response(defender_df, p, cfg)
+            if leg_kick
+            else classify_response(defender_df, p, cfg)
+        )
         if res is None:
             continue
         kind, evidence = res
