@@ -2,7 +2,7 @@ import pytest
 from synthetic import FPS, Scene
 
 from sparring.analysis.report import build_report, render_markdown
-from sparring.evaluation import evaluate, match
+from sparring.evaluation import ANY_STRIKE, STRIKE_TYPE, Labels, evaluate, match
 from sparring.events.base import Event
 from sparring.events.detect import detect_all
 from sparring.io.video import VideoInfo
@@ -10,32 +10,33 @@ from sparring.io.video import VideoInfo
 
 def test_match_is_one_to_one_within_tolerance():
     pred = [(1.0, 1.0), (1.05, 1.05), (3.0, 3.0)]
-    assert match(pred, [1.02, 2.0], tol=0.15) == 1
+    assert match(pred, [1.02, 2.0], tol=0.15) == [(0, 0)]
 
 
 def test_match_counts_label_inside_interval():
-    assert match([(2.0, 5.0)], [4.0], tol=0.15) == 1
-    assert match([(2.0, 5.0)], [5.5], tol=0.15) == 0
+    assert len(match([(2.0, 5.0)], [4.0], tol=0.15)) == 1
+    assert match([(2.0, 5.0)], [5.5], tol=0.15) == []
 
 
-def test_evaluate_scores_exact_and_any_punch():
+def _labels(events, **kw) -> Labels:
+    return Labels.from_dict({"segment": [0, 10], "events": events, **kw})
+
+
+def test_evaluate_detection_and_type_accuracy():
     events = [
         Event("A", "jab", 0.9, 1.0, 1.1),
-        Event("A", "cross", 1.9, 2.0, 2.1),  # labelled as a hook: wrong type, right time
+        Event("A", "cross", 1.9, 2.0, 2.1),  # labelled as a hook: right time, wrong type
         Event("B", "jab", 2.9, 3.0, 3.1),  # false positive
     ]
-    labels = {
-        "segment": [0, 10],
-        "events": [
+    labels = _labels(
+        [
             {"fighter": "A", "type": "jab", "t": 1.02},
             {"fighter": "A", "type": "lead_hook", "t": 2.0},
-            {"fighter": "B", "type": "punch", "t": 5.0},
-        ],
-    }
+            {"fighter": "B", "type": "punch", "t": 5.0},  # generic: detection only
+        ]
+    )
     s = evaluate(events, labels, tol=0.15)["scores"]
-    assert s["jab"]["tp"] == 1 and s["jab"]["pred"] == 2
-    assert s["lead_hook"]["recall"] == 0.0
-    assert s["punch (any)"] == {
+    assert s[ANY_STRIKE] == {
         "tp": 2,
         "pred": 3,
         "true": 3,
@@ -43,6 +44,30 @@ def test_evaluate_scores_exact_and_any_punch():
         "recall": 0.667,
         "f1": 0.667,
     }
+    assert s[STRIKE_TYPE]["accuracy"] == 0.5
+    assert s[STRIKE_TYPE]["confusions"] == ["lead_hook->cross"]
+
+
+def test_low_confidence_labels_are_dont_care():
+    events = [Event("A", "jab", 0.9, 1.0, 1.1)]
+    labels = _labels(
+        [
+            {"fighter": "A", "type": "punch", "t": 1.0, "confidence": "low"},
+            {"fighter": "A", "type": "punch", "t": 4.0, "confidence": "low"},
+        ]
+    )
+    s = evaluate(events, labels)["scores"][ANY_STRIKE]
+    assert (s["tp"], s["pred"], s["true"]) == (0, 0, 0)
+
+
+def test_ignore_intervals_drop_labels_and_predictions():
+    events = [Event("B", "jab", 1.9, 2.0, 2.1), Event("A", "jab", 1.9, 2.0, 2.1)]
+    labels = _labels(
+        [{"fighter": "B", "type": "punch", "t": 5.0}],
+        ignore=[{"fighter": "B", "from": 0.0, "to": 6.0}],
+    )
+    s = evaluate(events, labels)["scores"][ANY_STRIKE]
+    assert (s["tp"], s["pred"], s["true"]) == (0, 1, 0)  # only A's (false) jab counts
 
 
 @pytest.fixture

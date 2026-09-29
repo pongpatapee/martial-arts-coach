@@ -1,20 +1,767 @@
 {
-  "video": "test/video/boxing.mp4",
-  "labeller": "Claude, from 15 fps contact sheets (scripts/contact_sheet.py). Approximate: please verify against the real video.",
-  "fighters": {"A": "gold headgear, white top", "B": "red headgear, black top"},
-  "segment": [0.0, 6.0],
-  "notes": "type 'punch' = punch of unclear type; it only counts toward the 'punch (any)' score.",
-  "events": [
-    {"fighter": "A", "type": "jab", "t": 1.07},
-    {"fighter": "A", "type": "punch", "t": 1.4},
-    {"fighter": "A", "type": "punch", "t": 1.7},
-    {"fighter": "A", "type": "punch", "t": 2.05},
-    {"fighter": "A", "type": "punch", "t": 4.77},
-    {"fighter": "A", "type": "punch", "t": 5.1},
-    {"fighter": "A", "type": "punch", "t": 5.5},
-    {"fighter": "B", "type": "punch", "t": 5.0},
-    {"fighter": "B", "type": "punch", "t": 5.6},
-    {"fighter": "B", "type": "duck", "t": 2.4},
-    {"fighter": "A", "type": "guard_drop", "t": 4.2}
-  ]
+ "video": "test/video/boxing.mp4",
+ "labeller": "Claude, from 15 fps contact sheets (scripts/contact_sheet.py). Not coach-verified: correct these with the labelling tool before trusting absolute scores.",
+ "fighters": {
+  "A": "gold headgear, white top",
+  "B": "red headgear, black top"
+ },
+ "segment": [
+  0.0,
+  52.6
+ ],
+ "notes": "type 'punch' = punch of unclear type (counts only toward 'punch (any)'). confidence 'low' labels are don't-care: they neither reward nor penalise a prediction. 'ignore' intervals mark stretches where a fighter's actions are not visible.",
+ "ignore": [
+  {
+   "fighter": "A",
+   "from": 4.9,
+   "to": 5.7,
+   "why": "camera behind A in a close exchange"
+  },
+  {
+   "fighter": "A",
+   "from": 12.95,
+   "to": 14.3,
+   "why": "camera behind A"
+  },
+  {
+   "fighter": "B",
+   "from": 12.95,
+   "to": 14.1,
+   "why": "B hidden behind A"
+  },
+  {
+   "fighter": "B",
+   "from": 19.0,
+   "to": 22.0,
+   "why": "camera behind B"
+  },
+  {
+   "fighter": "B",
+   "from": 24.0,
+   "to": 26.0,
+   "why": "camera behind B"
+  },
+  {
+   "fighter": "A",
+   "from": 31.2,
+   "to": 34.0,
+   "why": "camera behind A"
+  },
+  {
+   "fighter": "B",
+   "from": 32.0,
+   "to": 32.8,
+   "why": "B hidden behind A"
+  },
+  {
+   "fighter": "B",
+   "from": 37.1,
+   "to": 40.0,
+   "why": "camera behind B"
+  },
+  {
+   "fighter": "B",
+   "from": 41.0,
+   "to": 44.0,
+   "why": "camera behind B"
+  },
+  {
+   "fighter": "B",
+   "from": 49.2,
+   "to": 52.7,
+   "why": "camera behind B"
+  },
+  {
+   "fighter": "A",
+   "from": 51.5,
+   "to": 52.7,
+   "why": "A hidden behind B"
+  }
+ ],
+ "events": [
+  {
+   "fighter": "A",
+   "type": "jab",
+   "t": 1.07,
+   "confidence": "high"
+  },
+  {
+   "fighter": "B",
+   "type": "punch",
+   "t": 1.17,
+   "confidence": "low"
+  },
+  {
+   "fighter": "A",
+   "type": "punch",
+   "t": 1.4,
+   "confidence": "med"
+  },
+  {
+   "fighter": "B",
+   "type": "punch",
+   "t": 1.6,
+   "confidence": "low"
+  },
+  {
+   "fighter": "A",
+   "type": "punch",
+   "t": 1.7,
+   "confidence": "med"
+  },
+  {
+   "fighter": "A",
+   "type": "punch",
+   "t": 2.05,
+   "confidence": "med"
+  },
+  {
+   "fighter": "B",
+   "type": "duck",
+   "t": 2.4,
+   "confidence": "med"
+  },
+  {
+   "fighter": "A",
+   "type": "guard_drop",
+   "t": 3.2,
+   "confidence": "high"
+  },
+  {
+   "fighter": "A",
+   "type": "guard_drop",
+   "t": 4.2,
+   "confidence": "high"
+  },
+  {
+   "fighter": "A",
+   "type": "punch",
+   "t": 4.77,
+   "confidence": "low"
+  },
+  {
+   "fighter": "B",
+   "type": "punch",
+   "t": 5.0,
+   "confidence": "med"
+  },
+  {
+   "fighter": "A",
+   "type": "punch",
+   "t": 5.1,
+   "confidence": "low"
+  },
+  {
+   "fighter": "A",
+   "type": "punch",
+   "t": 5.5,
+   "confidence": "low"
+  },
+  {
+   "fighter": "B",
+   "type": "punch",
+   "t": 5.6,
+   "confidence": "med"
+  },
+  {
+   "fighter": "A",
+   "type": "jab",
+   "t": 6.4,
+   "confidence": "high"
+  },
+  {
+   "fighter": "B",
+   "type": "punch",
+   "t": 6.55,
+   "confidence": "med"
+  },
+  {
+   "fighter": "A",
+   "type": "punch",
+   "t": 6.67,
+   "confidence": "med"
+  },
+  {
+   "fighter": "B",
+   "type": "punch",
+   "t": 6.93,
+   "confidence": "med"
+  },
+  {
+   "fighter": "B",
+   "type": "punch",
+   "t": 7.07,
+   "confidence": "high"
+  },
+  {
+   "fighter": "A",
+   "type": "duck",
+   "t": 7.2,
+   "confidence": "high"
+  },
+  {
+   "fighter": "B",
+   "type": "punch",
+   "t": 7.4,
+   "confidence": "med"
+  },
+  {
+   "fighter": "A",
+   "type": "duck",
+   "t": 7.45,
+   "confidence": "med"
+  },
+  {
+   "fighter": "A",
+   "type": "punch",
+   "t": 7.7,
+   "confidence": "med"
+  },
+  {
+   "fighter": "A",
+   "type": "punch",
+   "t": 8.07,
+   "confidence": "med"
+  },
+  {
+   "fighter": "A",
+   "type": "punch",
+   "t": 8.4,
+   "confidence": "med"
+  },
+  {
+   "fighter": "A",
+   "type": "jab",
+   "t": 8.77,
+   "confidence": "high"
+  },
+  {
+   "fighter": "A",
+   "type": "jab",
+   "t": 9.43,
+   "confidence": "high"
+  },
+  {
+   "fighter": "B",
+   "type": "punch",
+   "t": 9.55,
+   "confidence": "med"
+  },
+  {
+   "fighter": "B",
+   "type": "punch",
+   "t": 9.8,
+   "confidence": "high"
+  },
+  {
+   "fighter": "B",
+   "type": "punch",
+   "t": 9.93,
+   "confidence": "med"
+  },
+  {
+   "fighter": "A",
+   "type": "guard_drop",
+   "t": 10.5,
+   "confidence": "med"
+  },
+  {
+   "fighter": "A",
+   "type": "punch",
+   "t": 13.87,
+   "confidence": "low"
+  },
+  {
+   "fighter": "B",
+   "type": "punch",
+   "t": 14.2,
+   "confidence": "med"
+  },
+  {
+   "fighter": "B",
+   "type": "punch",
+   "t": 14.67,
+   "confidence": "med"
+  },
+  {
+   "fighter": "B",
+   "type": "punch",
+   "t": 14.93,
+   "confidence": "med"
+  },
+  {
+   "fighter": "A",
+   "type": "punch",
+   "t": 15.13,
+   "confidence": "med"
+  },
+  {
+   "fighter": "A",
+   "type": "punch",
+   "t": 15.2,
+   "confidence": "med"
+  },
+  {
+   "fighter": "B",
+   "type": "duck",
+   "t": 15.2,
+   "confidence": "med"
+  },
+  {
+   "fighter": "A",
+   "type": "punch",
+   "t": 15.45,
+   "confidence": "med"
+  },
+  {
+   "fighter": "B",
+   "type": "punch",
+   "t": 15.6,
+   "confidence": "med"
+  },
+  {
+   "fighter": "A",
+   "type": "punch",
+   "t": 15.87,
+   "confidence": "low"
+  },
+  {
+   "fighter": "B",
+   "type": "punch",
+   "t": 16.2,
+   "confidence": "med"
+  },
+  {
+   "fighter": "A",
+   "type": "cross",
+   "t": 16.45,
+   "confidence": "high"
+  },
+  {
+   "fighter": "B",
+   "type": "duck",
+   "t": 16.5,
+   "confidence": "high"
+  },
+  {
+   "fighter": "A",
+   "type": "jab",
+   "t": 16.88,
+   "confidence": "high"
+  },
+  {
+   "fighter": "A",
+   "type": "punch",
+   "t": 17.0,
+   "confidence": "med"
+  },
+  {
+   "fighter": "A",
+   "type": "punch",
+   "t": 19.87,
+   "confidence": "med"
+  },
+  {
+   "fighter": "B",
+   "type": "punch",
+   "t": 19.87,
+   "confidence": "low"
+  },
+  {
+   "fighter": "A",
+   "type": "punch",
+   "t": 20.13,
+   "confidence": "med"
+  },
+  {
+   "fighter": "A",
+   "type": "jab",
+   "t": 21.47,
+   "confidence": "high"
+  },
+  {
+   "fighter": "B",
+   "type": "punch",
+   "t": 21.57,
+   "confidence": "low"
+  },
+  {
+   "fighter": "A",
+   "type": "punch",
+   "t": 21.93,
+   "confidence": "med"
+  },
+  {
+   "fighter": "B",
+   "type": "punch",
+   "t": 22.07,
+   "confidence": "med"
+  },
+  {
+   "fighter": "A",
+   "type": "punch",
+   "t": 22.4,
+   "confidence": "low"
+  },
+  {
+   "fighter": "A",
+   "type": "punch",
+   "t": 23.13,
+   "confidence": "med"
+  },
+  {
+   "fighter": "B",
+   "type": "punch",
+   "t": 23.2,
+   "confidence": "med"
+  },
+  {
+   "fighter": "B",
+   "type": "punch",
+   "t": 23.4,
+   "confidence": "med"
+  },
+  {
+   "fighter": "B",
+   "type": "punch",
+   "t": 23.47,
+   "confidence": "low"
+  },
+  {
+   "fighter": "A",
+   "type": "punch",
+   "t": 24.07,
+   "confidence": "low"
+  },
+  {
+   "fighter": "B",
+   "type": "lead_hook",
+   "t": 24.37,
+   "confidence": "high"
+  },
+  {
+   "fighter": "A",
+   "type": "jab",
+   "t": 26.4,
+   "confidence": "high"
+  },
+  {
+   "fighter": "B",
+   "type": "block",
+   "t": 26.4,
+   "confidence": "high"
+  },
+  {
+   "fighter": "A",
+   "type": "guard_drop",
+   "t": 27.0,
+   "confidence": "med"
+  },
+  {
+   "fighter": "A",
+   "type": "jab",
+   "t": 28.63,
+   "confidence": "high"
+  },
+  {
+   "fighter": "B",
+   "type": "block",
+   "t": 28.63,
+   "confidence": "high"
+  },
+  {
+   "fighter": "A",
+   "type": "punch",
+   "t": 28.8,
+   "confidence": "low"
+  },
+  {
+   "fighter": "A",
+   "type": "jab",
+   "t": 30.0,
+   "confidence": "high"
+  },
+  {
+   "fighter": "B",
+   "type": "duck",
+   "t": 30.2,
+   "confidence": "high"
+  },
+  {
+   "fighter": "A",
+   "type": "no_defense",
+   "t": 30.5,
+   "confidence": "med"
+  },
+  {
+   "fighter": "B",
+   "type": "cross",
+   "t": 30.5,
+   "confidence": "high"
+  },
+  {
+   "fighter": "B",
+   "type": "punch",
+   "t": 30.73,
+   "confidence": "med"
+  },
+  {
+   "fighter": "B",
+   "type": "jab",
+   "t": 30.85,
+   "confidence": "high"
+  },
+  {
+   "fighter": "A",
+   "type": "block",
+   "t": 30.87,
+   "confidence": "med"
+  },
+  {
+   "fighter": "B",
+   "type": "punch",
+   "t": 33.93,
+   "confidence": "low"
+  },
+  {
+   "fighter": "B",
+   "type": "jab",
+   "t": 35.63,
+   "confidence": "high"
+  },
+  {
+   "fighter": "A",
+   "type": "block",
+   "t": 36.13,
+   "confidence": "med"
+  },
+  {
+   "fighter": "B",
+   "type": "jab",
+   "t": 36.13,
+   "confidence": "high"
+  },
+  {
+   "fighter": "A",
+   "type": "duck",
+   "t": 36.47,
+   "confidence": "high"
+  },
+  {
+   "fighter": "B",
+   "type": "punch",
+   "t": 36.47,
+   "confidence": "high"
+  },
+  {
+   "fighter": "A",
+   "type": "punch",
+   "t": 36.67,
+   "confidence": "low"
+  },
+  {
+   "fighter": "A",
+   "type": "punch",
+   "t": 36.8,
+   "confidence": "med"
+  },
+  {
+   "fighter": "A",
+   "type": "jab",
+   "t": 36.95,
+   "confidence": "high"
+  },
+  {
+   "fighter": "B",
+   "type": "punch",
+   "t": 37.07,
+   "confidence": "med"
+  },
+  {
+   "fighter": "A",
+   "type": "punch",
+   "t": 39.93,
+   "confidence": "med"
+  },
+  {
+   "fighter": "A",
+   "type": "punch",
+   "t": 40.07,
+   "confidence": "med"
+  },
+  {
+   "fighter": "A",
+   "type": "lead_hook",
+   "t": 40.23,
+   "confidence": "high"
+  },
+  {
+   "fighter": "A",
+   "type": "punch",
+   "t": 40.4,
+   "confidence": "med"
+  },
+  {
+   "fighter": "B",
+   "type": "punch",
+   "t": 40.63,
+   "confidence": "med"
+  },
+  {
+   "fighter": "A",
+   "type": "jab",
+   "t": 40.8,
+   "confidence": "high"
+  },
+  {
+   "fighter": "A",
+   "type": "guard_drop",
+   "t": 42.3,
+   "confidence": "med"
+  },
+  {
+   "fighter": "A",
+   "type": "block",
+   "t": 45.03,
+   "confidence": "high"
+  },
+  {
+   "fighter": "B",
+   "type": "jab",
+   "t": 45.03,
+   "confidence": "high"
+  },
+  {
+   "fighter": "A",
+   "type": "punch",
+   "t": 45.13,
+   "confidence": "med"
+  },
+  {
+   "fighter": "B",
+   "type": "punch",
+   "t": 45.25,
+   "confidence": "med"
+  },
+  {
+   "fighter": "A",
+   "type": "jab",
+   "t": 45.5,
+   "confidence": "high"
+  },
+  {
+   "fighter": "A",
+   "type": "jab",
+   "t": 45.85,
+   "confidence": "high"
+  },
+  {
+   "fighter": "B",
+   "type": "block",
+   "t": 45.85,
+   "confidence": "med"
+  },
+  {
+   "fighter": "A",
+   "type": "jab",
+   "t": 46.42,
+   "confidence": "high"
+  },
+  {
+   "fighter": "A",
+   "type": "punch",
+   "t": 46.55,
+   "confidence": "med"
+  },
+  {
+   "fighter": "B",
+   "type": "jab",
+   "t": 46.7,
+   "confidence": "high"
+  },
+  {
+   "fighter": "A",
+   "type": "slip",
+   "t": 46.8,
+   "confidence": "med"
+  },
+  {
+   "fighter": "B",
+   "type": "punch",
+   "t": 46.8,
+   "confidence": "med"
+  },
+  {
+   "fighter": "A",
+   "type": "jab",
+   "t": 47.75,
+   "confidence": "high"
+  },
+  {
+   "fighter": "B",
+   "type": "block",
+   "t": 47.75,
+   "confidence": "med"
+  },
+  {
+   "fighter": "A",
+   "type": "punch",
+   "t": 47.93,
+   "confidence": "med"
+  },
+  {
+   "fighter": "A",
+   "type": "punch",
+   "t": 48.0,
+   "confidence": "med"
+  },
+  {
+   "fighter": "A",
+   "type": "punch",
+   "t": 48.27,
+   "confidence": "med"
+  },
+  {
+   "fighter": "B",
+   "type": "jab",
+   "t": 48.4,
+   "confidence": "high"
+  },
+  {
+   "fighter": "A",
+   "type": "no_defense",
+   "t": 48.52,
+   "confidence": "med"
+  },
+  {
+   "fighter": "B",
+   "type": "cross",
+   "t": 48.52,
+   "confidence": "high"
+  },
+  {
+   "fighter": "A",
+   "type": "punch",
+   "t": 48.67,
+   "confidence": "med"
+  },
+  {
+   "fighter": "A",
+   "type": "punch",
+   "t": 48.87,
+   "confidence": "high"
+  },
+  {
+   "fighter": "A",
+   "type": "punch",
+   "t": 49.0,
+   "confidence": "med"
+  },
+  {
+   "fighter": "B",
+   "type": "punch",
+   "t": 51.2,
+   "confidence": "med"
+  }
+ ]
 }
