@@ -59,6 +59,23 @@ def analyze(
     run(ctx, from_stage=from_stage, to_stage=to_stage)
 
 
+@app.command("coach")
+def coach_cmd(
+    run_dir: Path,
+    llm: Annotated[bool, typer.Option(help="Also write a Claude-written coach's note.")] = False,
+) -> None:
+    """Print a run's coaching; with --llm, write coach_note.md in a coach's voice."""
+    report = json.loads((run_dir / "report.json").read_text())
+    for f, d in report["fighters"].items():
+        typer.echo(f"Fighter {f}: {d['coaching']['summary']}")
+    if llm:
+        from sparring.coaching.llm import coach_note
+
+        note = coach_note(report)
+        (run_dir / "coach_note.md").write_text(note)
+        typer.echo(f"wrote {run_dir / 'coach_note.md'}")
+
+
 @app.command("eval")
 def evaluate(
     run_dir: Path,

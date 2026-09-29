@@ -198,19 +198,8 @@ class FaultConfig(_Section):
 
 
 class ReportConfig(_Section):
-    max_evidence: int = 5
+    max_evidence: int = 5  # timestamps to watch per coaching point
     evidence_min_spacing_s: float = 1.0
-    # Metric targets used to rank strengths/improvement areas.
-    good_return_to_guard_rate: float = 0.8
-    bad_return_to_guard_rate: float = 0.6
-    good_defense_rate: float = 0.5
-    bad_defense_rate: float = 0.25
-    bad_guard_drop_per_min: float = 4.0
-    bad_guard_low_share: float = 0.25  # share of in-range time a hand is held low
-    good_punches_per_min: float = 30.0
-    bad_punches_per_min: float = 12.0
-    good_jab_share: float = 0.35
-    bad_jab_share: float = 0.15
 
 
 class Config(_Section):

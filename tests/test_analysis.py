@@ -86,13 +86,14 @@ def session(cfg, features_of):
     return build_report(events, f, info, meta, cfg)
 
 
-def test_report_findings(session):
+def test_report_coaching(session):
     a, b = session["fighters"]["A"], session["fighters"]["B"]
     assert a["metrics"]["offense"]["by_type"]["jab"] == 8
-    assert "jab" in {x["key"] for x in a["strengths"]}
-    assert b["improve"][0]["key"] == "guard_drop"
-    assert "rear" in b["improve"][0]["title"]
-    assert b["improve"][0]["evidence_t"]
+    assert "jab_leads" in {x["id"] for x in a["coaching"]["strengths"]}
+    top = b["coaching"]["priorities"][0]
+    assert top["id"] == "low_hand" and "rear" in top["title"]
+    assert top["watch"] and top["drills"]
+    assert b["coaching"]["session_plan"][0]["for"] == top["title"]
 
 
 def test_report_markdown_renders(session):

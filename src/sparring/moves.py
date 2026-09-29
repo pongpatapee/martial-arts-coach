@@ -28,10 +28,12 @@ class MoveSpec:
 def _strikes(
     limb: Limb, family: str, label: str, names: tuple[str, str] | None = None
 ) -> list[MoveSpec]:
+    """Lead and rear variants. With explicit names (jab/cross), the names are also the labels."""
     lead, rear = names or (f"lead_{family}", f"rear_{family}")
+    lead_label, rear_label = names or (f"lead {label}", f"rear {label}")
     return [
-        MoveSpec(lead, "strike", f"lead {label}", limb, "lead", family),
-        MoveSpec(rear, "strike", f"rear {label}", limb, "rear", family),
+        MoveSpec(lead, "strike", lead_label, limb, "lead", family),
+        MoveSpec(rear, "strike", rear_label, limb, "rear", family),
     ]
 
 
