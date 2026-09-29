@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sparring labeller</title>
+<style>
+  :root {
+    --bg: #111418; --panel: #1b2027; --line: #2c333d; --text: #e7eaee; --muted: #8b95a3;
+    --a: #f5c542; --b: #e0559b; --strike: #4fc27a; --defense: #43a6f0; --fault: #ef5b5b;
+    --pred: #9aa3ad; --accent: #7aa7ff;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  .wrap { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 12px; padding: 12px; height: 100vh; }
+  .left { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+  video { width: 100%; max-height: 68vh; background: #000; border-radius: 6px; object-fit: contain; }
+  .bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .time { font-variant-numeric: tabular-nums; font-size: 15px; min-width: 150px; }
+  .pill { padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); cursor: pointer; }
+  .pill.on.A { background: var(--a); color: #111; border-color: var(--a); }
+  .pill.on.B { background: var(--b); color: #111; border-color: var(--b); }
+  .pill.on.low { background: var(--muted); color: #111; }
+  button { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+  button.primary { background: var(--accent); color: #0b1020; border-color: var(--accent); font-weight: 600; }
+  canvas { width: 100%; height: 88px; background: var(--panel); border-radius: 6px; cursor: crosshair; }
+  .panel { background: var(--panel); border-radius: 8px; padding: 10px; overflow: auto; min-height: 0; }
+  .right { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 6px; }
+  .keys { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; }
+  kbd { background: #0c0f13; border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; font-size: 11px; }
+  table { width: 100%; border-collapse: collapse; }
+  td { padding: 3px 4px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+  tr.sel td { background: #26303c; }
+  tr:hover td { background: #222a33; cursor: pointer; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; }
+  .x { color: var(--muted); cursor: pointer; }
+  .status { color: var(--muted); }
+  .status.err { color: var(--fault); }
+  .sugg { color: var(--pred); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="left">
+    <video id="v" src="/video" preload="auto" playsinline></video>
+    <div class="bar">
+      <span class="time" id="time">0:00.00 · f0</span>
+      <span class="pill A on" id="fa">A</span><span class="pill B" id="fb">B</span>
+      <span class="pill" id="lowp" title="L">low confidence</span>
+      <span class="pill" id="rate">1x</span>
+      <span style="flex:1"></span>
+      <span class="status" id="status"></span>
+      <button class="primary" id="save">Save (⌘S)</button>
+    </div>
+    <canvas id="tl" height="88"></canvas>
+    <div class="bar status">Timeline: top = A, bottom = B · solid = your labels, grey = detector predictions, shaded = ignore intervals · click to seek</div>
+  </div>
+  <div class="right">
+    <div class="panel">
+      <h2>Keys</h2>
+      <div class="keys" id="keys"></div>
+    </div>
+    <div class="panel">
+      <h2>Suggestion near playhead <span class="sugg">(Enter = accept, Del on a label = remove)</span></h2>
+      <div id="sugg" class="sugg">–</div>
+    </div>
+    <div class="panel" style="flex:1">
+      <h2>Labels <span id="count"></span></h2>
+      <table id="list"></table>
+    </div>
+  </div>
+</div>
+<script>
+const KEYMAP = {
+  "1": "jab", "2": "cross", "3": "lead_hook", "4": "rear_hook", "5": "lead_uppercut", "6": "rear_uppercut",
+  "p": "punch", "k": "kick", "q": "lead_teep", "w": "rear_low_kick", "e": "rear_body_kick", "r": "rear_head_kick",
+  "n": "rear_knee", "m": "rear_elbow",
+  "s": "slip", "d": "duck", "b": "block", "c": "check", "x": "no_defense", "g": "guard_drop",
+};
+const OTHER = [["Space", "play / pause"], ["← →", "±1 frame (Shift: ±0.5 s)"], ["Tab", "switch fighter A/B"],
+  ["L", "toggle low confidence"], ["I", "start/end ignore interval"], ["Enter", "accept nearest suggestion"],
+  ["Del", "delete selected label"], ["[ ]", "prev / next label"], ["- =", "slower / faster"]];
+const v = document.getElementById("v"), tl = document.getElementById("tl"), ctx = tl.getContext("2d");
+let S = null, fighter = "A", low = false, sel = -1, dirty = false, ignoreStart = null, fps = 30;
+const kindOf = t => (S.moves[t] ? S.moves[t].kind : "strike");
+const color = t => ({strike: "--strike", defense: "--defense", fault: "--fault", other: "--muted"})[kindOf(t)] || "--strike";
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n);
+const fmt = t => `${Math.floor(t / 60)}:${(t % 60).toFixed(2).padStart(5, "0")}`;
+
+function keysPanel() {
+  const k = document.getElementById("keys");
+  k.innerHTML = Object.entries(KEYMAP).map(([key, t]) => `<kbd>${key}</kbd><span>${t.replaceAll("_", " ")}</span>`).join("")
+    + OTHER.map(([a, b]) => `<kbd>${a}</kbd><span>${b}</span>`).join("");
+}
+function status(msg, err) { const s = document.getElementById("status"); s.textContent = msg; s.className = "status" + (err ? " err" : ""); }
+function setFighter(f) { fighter = f; fa.classList.toggle("on", f === "A"); fb.classList.toggle("on", f === "B"); }
+function markDirty() { dirty = true; status("unsaved changes"); render(); }
+
+function add(type, t) {
+  S.labels.events.push({fighter, type, t: Math.round(t * 1000) / 1000, confidence: low ? "low" : "high"});
+  S.labels.events.sort((a, b) => a.t - b.t);
+  sel = S.labels.events.findIndex(e => e.t === Math.round(t * 1000) / 1000 && e.type === type);
+  markDirty();
+}
+function nearestSuggestion() {
+  const t = v.currentTime;
+  const labelled = S.labels.events.filter(e => e.fighter === fighter);
+  const cands = S.predictions.filter(p => p.fighter === fighter && Math.abs(p.peak_t - t) < 0.4
+    && !labelled.some(l => Math.abs(l.t - p.peak_t) < 0.15));
+  cands.sort((a, b) => Math.abs(a.peak_t - t) - Math.abs(b.peak_t - t));
+  return cands[0];
+}
+function render() {
+  if (!S) return;
+  document.getElementById("time").textContent = `${fmt(v.currentTime)} · f${Math.round(v.currentTime * fps)}`;
+  // timeline
+  const W = tl.width = tl.clientWidth * devicePixelRatio, H = tl.height = 88 * devicePixelRatio, d = v.duration || 1;
+  ctx.clearRect(0, 0, W, H);
+  const row = f => (f === "A" ? 0 : H / 2), x = t => (t / d) * W;
+  for (const ig of S.labels.ignore || []) {
+    ctx.fillStyle = "rgba(255,255,255,0.07)"; ctx.fillRect(x(ig.from), row(ig.fighter), x(ig.to) - x(ig.from), H / 2);
+  }
+  for (const p of S.predictions) {
+    ctx.fillStyle = css("--pred"); ctx.globalAlpha = 0.45;
+    ctx.fillRect(x(p.peak_t) - 1, row(p.fighter) + H / 4, 2 * devicePixelRatio, H / 4 - 2);
+  }
+  ctx.globalAlpha = 1;
+  S.labels.events.forEach((e, i) => {
+    ctx.fillStyle = css(color(e.type)); ctx.globalAlpha = e.confidence === "low" ? 0.45 : 1;
+    ctx.fillRect(x(e.t) - 1, row(e.fighter) + 3, (i === sel ? 4 : 2) * devicePixelRatio, H / 4 - 3);
+  });
+  ctx.globalAlpha = 1; ctx.fillStyle = "#fff"; ctx.fillRect(x(v.currentTime), 0, 2, H);
+  ctx.fillStyle = css("--line"); ctx.fillRect(0, H / 2, W, 1);
+  // suggestion
+  const s = nearestSuggestion();
+  document.getElementById("sugg").textContent = s ? `${s.fighter} ${s.type.replaceAll("_", " ")} @ ${fmt(s.peak_t)} (p=${s.confidence})` : "–";
+  // list
+  const rows = S.labels.events.map((e, i) =>
+    `<tr data-i="${i}" class="${i === sel ? "sel" : ""}"><td><span class="dot" style="background:var(${e.fighter === "A" ? "--a" : "--b"})"></span>${e.fighter}</td>`
+    + `<td>${fmt(e.t)}</td><td style="color:var(${color(e.type)})">${e.type.replaceAll("_", " ")}</td>`
+    + `<td class="status">${e.confidence === "low" ? "low" : ""}</td><td class="x" data-del="${i}">✕</td></tr>`);
+  document.getElementById("list").innerHTML = rows.join("");
+  document.getElementById("count").textContent = `(${S.labels.events.length})`;
+}
+async function save() {
+  const r = await fetch("/api/save", {method: "POST", body: JSON.stringify(S.labels)});
+  const j = await r.json();
+  if (j.ok) { dirty = false; status(`saved to ${S.labels_path}`); } else status(j.error, true);
+}
+document.addEventListener("keydown", ev => {
+  if ((ev.metaKey || ev.ctrlKey) && ev.key === "s") { ev.preventDefault(); save(); return; }
+  if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
+  const k = ev.key.toLowerCase();
+  if (k === " ") { ev.preventDefault(); v.paused ? v.play() : v.pause(); }
+  else if (k === "arrowleft" || k === "arrowright") {
+    ev.preventDefault(); v.pause();
+    const step = ev.shiftKey ? 0.5 : 1 / fps;
+    v.currentTime = Math.max(0, v.currentTime + (k === "arrowleft" ? -step : step));
+  }
+  else if (k === "tab") { ev.preventDefault(); setFighter(fighter === "A" ? "B" : "A"); render(); }
+  else if (k === "l") { low = !low; lowp.classList.toggle("on", low); lowp.classList.toggle("low", low); }
+  else if (k === "i") {
+    if (ignoreStart === null) { ignoreStart = v.currentTime; status(`ignore ${fighter} from ${fmt(ignoreStart)}… press I again to end`); }
+    else {
+      const [a, b] = [ignoreStart, v.currentTime].sort((x, y) => x - y);
+      (S.labels.ignore ||= []).push({fighter, from: +a.toFixed(2), to: +b.toFixed(2), why: "not visible"});
+      ignoreStart = null; markDirty();
+    }
+  }
+  else if (k === "enter") { const s = nearestSuggestion(); if (s) { v.currentTime = s.peak_t; add(s.type, s.peak_t); } }
+  else if ((k === "delete" || k === "backspace") && sel >= 0) { S.labels.events.splice(sel, 1); sel = -1; markDirty(); }
+  else if (k === "[" || k === "]") {
+    const ev2 = S.labels.events; if (!ev2.length) return;
+    const t = v.currentTime;
+    const i = k === "]" ? ev2.findIndex(e => e.t > t + 1e-3) : ev2.map(e => e.t < t - 1e-3).lastIndexOf(true);
+    if (i >= 0) { sel = i; v.currentTime = ev2[i].t; setFighter(ev2[i].fighter); render(); }
+  }
+  else if (k === "-" || k === "=") {
+    const rates = [0.25, 0.5, 1, 1.5, 2]; let i = rates.indexOf(v.playbackRate);
+    v.playbackRate = rates[Math.max(0, Math.min(rates.length - 1, i + (k === "=" ? 1 : -1)))];
+    document.getElementById("rate").textContent = v.playbackRate + "x";
+  }
+  else if (KEYMAP[k]) { add(KEYMAP[k], v.currentTime); }
+});
+tl.addEventListener("click", ev => {
+  const r = tl.getBoundingClientRect(); v.currentTime = ((ev.clientX - r.left) / r.width) * (v.duration || 0);
+  setFighter(ev.clientY - r.top < r.height / 2 ? "A" : "B");
+});
+document.getElementById("list").addEventListener("click", ev => {
+  const del = ev.target.dataset.del;
+  if (del !== undefined) { S.labels.events.splice(+del, 1); sel = -1; markDirty(); return; }
+  const tr = ev.target.closest("tr"); if (!tr) return;
+  sel = +tr.dataset.i; const e = S.labels.events[sel]; v.currentTime = e.t; setFighter(e.fighter); render();
+});
+fa.onclick = () => { setFighter("A"); render(); }; fb.onclick = () => { setFighter("B"); render(); };
+lowp.onclick = () => document.dispatchEvent(new KeyboardEvent("keydown", {key: "l"}));
+document.getElementById("save").onclick = save;
+window.addEventListener("beforeunload", e => { if (dirty) { e.preventDefault(); e.returnValue = ""; } });
+v.addEventListener("timeupdate", render); v.addEventListener("seeked", render); window.addEventListener("resize", render);
+(function loop() { if (!v.paused) render(); requestAnimationFrame(loop); })();
+fetch("/api/state").then(r => r.json()).then(s => { S = s; fps = s.fps; S.labels.ignore ||= []; keysPanel(); render(); status(`${S.labels.events.length} labels loaded`); });
+</script>
+</body>
+</html>

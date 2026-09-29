@@ -59,6 +59,21 @@ def analyze(
     run(ctx, from_stage=from_stage, to_stage=to_stage)
 
 
+@app.command()
+def label(
+    video: Path,
+    labels: Annotated[Path, typer.Option(help="Labels JSON to create or edit.")],
+    run: Annotated[
+        Path | None, typer.Option(help="Run dir whose events are shown as suggestions.")
+    ] = None,
+    port: int = 8765,
+) -> None:
+    """Open the labelling tool in the browser (local only)."""
+    from sparring.labeling.server import serve
+
+    serve(video, labels, run, port)
+
+
 @app.command("coach")
 def coach_cmd(
     run_dir: Path,
