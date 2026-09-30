@@ -39,3 +39,4 @@ venv/
 runs/
 models/
 labels/*.local.json
+data/

@@ -74,6 +74,34 @@ def label(
     serve(video, labels, run, port)
 
 
+@app.command()
+def serve(
+    data: Annotated[Path, typer.Option(help="Where uploads and analyses are stored.")] = Path(
+        "data"
+    ),
+    host: str = "127.0.0.1",
+    port: int = 8000,
+    max_upload_mb: int = 2048,
+    reload: Annotated[
+        bool, typer.Option(help="Auto-reload on code changes (development).")
+    ] = False,
+) -> None:
+    """Run the web app: upload videos, watch progress, review analyses."""
+    import uvicorn
+
+    _setup_logging(False)
+    if reload:
+        import os
+
+        os.environ["SPARRING_DATA"] = str(data)
+        os.environ["SPARRING_MAX_UPLOAD_MB"] = str(max_upload_mb)
+        uvicorn.run("sparring.web.main:app", host=host, port=port, reload=True)
+        return
+    from sparring.web.app import create_app
+
+    uvicorn.run(create_app(data, max_upload_mb=max_upload_mb), host=host, port=port)
+
+
 @app.command("coach")
 def coach_cmd(
     run_dir: Path,
