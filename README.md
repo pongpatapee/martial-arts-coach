@@ -41,11 +41,63 @@ Model weights download on first run:
 The trained strike classifier ships in `src/sparring/assets/`. Runs on Apple Silicon, CUDA or
 CPU. The 52-second sample takes about 6 minutes on an M5.
 
+## Web app
+
+```
+uv run sparring serve            # http://127.0.0.1:8000
+```
+
+Open the page, drop in a video, and pick the discipline and detection method. The page shows
+progress stage by stage; a minute of video takes a few minutes. Then review the analysis:
+
+- **Player:** play/pause, speeds from 0.1x to 2x, frame-by-frame stepping, ±0.5 s jumps, and
+  previous/next event. It shows a time and frame readout, a skeleton overlay synced per frame,
+  and a list of the events happening now.
+- **Timeline:** one lane per fighter, coloured by strike / defence / fault. Hover for details,
+  click to seek, scroll to zoom, drag to pan.
+- **Events** tab: filter by fighter, kind, move or confidence. The list follows the playhead.
+- **Highlights** tab: key moments (combinations, clean strikes, defences, coaching evidence).
+  **Play highlights** runs through them slowed down.
+- **Fighter A / B** tabs: the coaching, with clickable "watch" timestamps, drills and numbers.
+- **Re-analyse:** switch discipline or method on a finished analysis. Only detection and
+  coaching re-run, which takes seconds.
+
+Keyboard: `Space` play, `←/→` frame, `Shift+←/→` 0.5 s, `[`/`]` event, `-`/`=` speed,
+`S` skeleton, `H` highlights, `Z`/`X` zoom, `?` help.
+
+Uploads and results are stored under `data/` (`--data` to change). Jobs run one at a time in a
+separate process and resume after a restart. The server listens on localhost by default. To
+share it with teammates, run `--host 0.0.0.0` behind a reverse proxy that adds authentication:
+the app itself has no accounts yet.
+
+**Frontend development** (hot reload; API calls are proxied to `sparring serve` on :8000):
+
+```
+uv run sparring serve --reload &
+cd web && pnpm install && pnpm dev          # http://localhost:5173
+pnpm test && pnpm build                     # unit tests; production build into src/sparring/web/static
+```
+
+**API:**
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/options` | Disciplines, methods and the move taxonomy |
+| `POST /api/jobs` | Upload a video (`file`, `discipline`, `method`, optional `fighters`) |
+| `GET /api/jobs`, `GET /api/jobs/{id}` | List jobs; one job with progress |
+| `POST /api/jobs/{id}/reanalyze` | Re-run detection and report with new options |
+| `POST /api/jobs/{id}/retry` | Re-queue a failed job |
+| `DELETE /api/jobs/{id}` | Delete a job |
+| `GET /api/jobs/{id}/analysis` | Report, events and video info |
+| `GET /api/jobs/{id}/poses` | Keypoints as int16 binary; shape in `X-Shape` |
+| `GET /api/jobs/{id}/video`, `GET /api/jobs/{id}/thumbnail` | Playback file (range requests) and thumbnail |
+
 ## Commands
 
 | Command | What it does |
 |---|---|
 | `sparring analyze VIDEO --out RUN [--discipline D] [--method M]` | Full pipeline. `--from-stage events` re-runs only detection + report (seconds). |
+| `sparring serve [--data DIR] [--host H] [--port P]` | The web app (see above). |
 | `sparring coach RUN [--llm]` | Print each fighter's coaching summary. `--llm` writes `coach_note.md`, a coach-voice rewrite by Claude that only uses facts from the report. Needs the `llm` extra and Anthropic credentials. |
 | `sparring label VIDEO --labels labels/x.json [--run RUN]` | Local browser labelling tool. The detector's predictions from `RUN` appear as suggestions you accept with Enter. |
 | `sparring eval RUN LABELS` | Score a run against labels. |
@@ -125,7 +177,7 @@ centre line after attacking, not checking kicks, kicks with the hands down, not 
 ## Development
 
 ```
-uv run pytest            # 58 fast tests on synthetic skeletons, no models or video
+uv run pytest            # fast tests (engine on synthetic skeletons, web API with a fake pipeline)
 uv run pytest -m slow    # end-to-end on test/video/boxing.mp4 (git-ignored; downloads models)
 uv run ruff check && uv run ruff format
 ```
