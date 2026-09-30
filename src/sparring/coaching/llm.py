@@ -33,9 +33,10 @@ def build_messages(report: dict) -> list[dict]:
 
 def coach_note(report: dict, client=None) -> str:
     """Return a Markdown coach's note. Raises RuntimeError if the model declines."""
-    import anthropic
+    if client is None:
+        import anthropic
 
-    client = client or anthropic.Anthropic()
+        client = anthropic.Anthropic()
     response = client.beta.messages.create(
         model=MODEL,
         max_tokens=16000,

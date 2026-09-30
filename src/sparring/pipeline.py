@@ -20,12 +20,58 @@ from sparring.skeleton import FIGHTERS
 log = logging.getLogger(__name__)
 
 
+class Progress:
+    """Writes the pipeline's progress to `progress.json` in the run directory, atomically, so
+    another process (e.g. the web app) can poll it. Updates are throttled to ~2 per second."""
+
+    def __init__(self, path: Path, stages: list[str]):
+        self.path = path
+        self.stages = stages
+        self.stage = ""
+        self._last = 0.0
+
+    def start(self, stage: str) -> None:
+        self.stage = stage
+        self._write(0.0, force=True)
+
+    def update(self, fraction: float) -> None:
+        self._write(fraction)
+
+    def finish(self) -> None:
+        self.stage = "done"
+        self._write(1.0, force=True)
+
+    def _write(self, fraction: float, force: bool = False) -> None:
+        now = time.time()
+        if not force and now - self._last < 0.5:
+            return
+        self._last = now
+        payload = {
+            "stage": self.stage,
+            "stages": self.stages,
+            "stage_index": self.stages.index(self.stage)
+            if self.stage in self.stages
+            else len(self.stages),
+            "fraction": round(min(max(fraction, 0.0), 1.0), 3),
+            "updated": now,
+        }
+        tmp = self.path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(payload))
+        tmp.replace(self.path)
+
+
 @dataclass
 class RunContext:
     video: Path
     run_dir: Path
     config: Config
     fighter_override: tuple[int, int] | None = None
+    progress: Progress | None = None
+
+    def report(self, fraction: float) -> None:
+        """Progress within the current stage (0..1), for long stages."""
+        if self.progress:
+            self.progress.update(fraction)
 
     def path(self, name: str) -> Path:
         return self.run_dir / name
@@ -69,6 +115,7 @@ def stage_track(ctx: RunContext) -> None:
             descs.append(appearance.describe(fd.image, box))
         if fd.frame % 100 == 0:
             log.info("track: frame %d/%d", fd.frame, n)
+        ctx.report(fd.frame / max(n, 1))
     df = pd.DataFrame(rows, columns=["frame", "track_id", "x1", "y1", "x2", "y2", "conf"])
     df.to_parquet(ctx.path("tracks.parquet"), index=False)
     np.save(ctx.path("appearance.npy"), np.asarray(descs, np.float32))
@@ -110,6 +157,7 @@ def stage_pose(ctx: RunContext) -> None:
             track.boxes[i, fi] = boxes[j]
         if i % 100 == 0:
             log.info("pose: frame %d/%d", i, n)
+        ctx.report(i / max(n, 1))
     track.save(ctx.path("poses.npz"))
 
 
@@ -138,6 +186,7 @@ def stage_pose3d(ctx: RunContext) -> None:
             sc[i, FIGHTERS.index(f)] = s[j]
         if i % 100 == 0:
             log.info("pose3d: frame %d/%d", i, n)
+        ctx.report(i / max(n, 1))
     np.savez_compressed(ctx.path("poses3d.npz"), keypoints=kp, scores=sc)
 
 
@@ -214,10 +263,15 @@ def run(ctx: RunContext, from_stage: str = "ingest", to_stage: str = "render") -
     names = list(STAGES)
     if from_stage not in STAGES or to_stage not in STAGES:
         raise ValueError(f"unknown stage; choose from {names}")
+    selected = names[names.index(from_stage) : names.index(to_stage) + 1]
     ctx.run_dir.mkdir(parents=True, exist_ok=True)
     ctx.path("config.json").write_text(ctx.config.model_dump_json(indent=2))
-    for name in names[names.index(from_stage) : names.index(to_stage) + 1]:
+    if ctx.progress is None:
+        ctx.progress = Progress(ctx.path("progress.json"), selected)
+    for name in selected:
         t0 = time.perf_counter()
         log.info("stage %s ...", name)
+        ctx.progress.start(name)
         STAGES[name](ctx)
         log.info("stage %s done in %.1fs", name, time.perf_counter() - t0)
+    ctx.progress.finish()
