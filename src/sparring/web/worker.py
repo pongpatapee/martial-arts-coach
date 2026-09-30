@@ -11,6 +11,7 @@ not wait behind the queue.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import queue
@@ -228,15 +229,13 @@ class Worker:
             self.store.update(job_id, status="done")
         except Exception as e:  # noqa: BLE001 - any failure must be recorded on the job
             log.exception("job %s failed", job_id)
-            try:
+            with contextlib.suppress(KeyError):  # deleted while running
                 self.store.update(
                     job_id,
                     status="failed",
                     error=str(e) or e.__class__.__name__,
                     log_tail=_tail(self.store.dir(job_id) / "run.log"),
                 )
-            except KeyError:
-                pass
 
     def reanalyze(self, job_id: str, options: JobOptions) -> Job:
         """Re-run detection + report with new options (seconds). Runs in the caller's thread."""
