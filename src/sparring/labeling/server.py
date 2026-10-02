@@ -1,4 +1,4 @@
-"""Local labelling tool: `sparring label VIDEO --labels labels/x.json [--run runs/x]`.
+"""Local labelling tool: `sparring label CLIP` (or `sparring label VIDEO --labels x.json [--run RUN]`).
 
 Serves a single page that plays the video with frame stepping and one-key event labelling,
 shows the detector's predictions (from the run's events.json) as suggestions to accept or reject,
@@ -26,10 +26,10 @@ def _page() -> bytes:
     return (resources.files("sparring") / "labeling" / "index.html").read_bytes()
 
 
-def load_labels(path: Path, video: Path) -> dict:
+def load_labels(path: Path) -> dict:
     if path.exists():
         return json.loads(path.read_text())
-    return {"video": str(video), "segment": [0.0, None], "ignore": [], "events": []}
+    return {"segment": [0.0, None], "ignore": [], "events": []}
 
 
 def save_labels(path: Path, data: dict) -> None:
@@ -78,7 +78,7 @@ def make_handler(video: Path, labels: Path, run: Path | None):
                     ]
                 self._json(
                     {
-                        "labels": load_labels(labels, video),
+                        "labels": load_labels(labels),
                         "predictions": events,
                         "fps": info.get("fps", 30.0),
                         "labels_path": str(labels),

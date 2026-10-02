@@ -12,8 +12,9 @@ import pytest
 from sparring.config import Config
 from sparring.pipeline import RunContext, run
 
-VIDEO = Path("test/video/boxing.mp4")
-LABELS = Path("labels/boxing.json")
+CLIP = Path("datasets/clips/boxing-sample")
+VIDEO = CLIP / "video.mp4"
+LABELS = CLIP / "labels.json"
 
 
 @pytest.mark.slow

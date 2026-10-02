@@ -1,0 +1,11 @@
+discipline = "boxing"
+split = "train"
+camera = ""
+source = ""
+notes = "Original development clip; the bundled strike model is trained on it, so scores on it are in-sample."
+video = "video.mp4"
+sha256 = "662088df002604c9e12c8239d4172ce76ebe95082f75eddfa4b911ecabc26303"
+fps = 30.0
+duration_s = 52.63
+width = 1080
+height = 1920

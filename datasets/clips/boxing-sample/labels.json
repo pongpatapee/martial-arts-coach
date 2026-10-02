@@ -1,5 +1,4 @@
 {
- "video": "test/video/boxing.mp4",
  "labeller": "Claude, from 15 fps contact sheets (scripts/contact_sheet.py). Not coach-verified: correct these with the labelling tool before trusting absolute scores.",
  "fighters": {
   "A": "gold headgear, white top",

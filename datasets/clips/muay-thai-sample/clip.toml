@@ -1,0 +1,11 @@
+discipline = "muay_thai"
+split = "train"
+camera = ""
+source = ""
+notes = "Unlabelled."
+video = "video.mp4"
+sha256 = "ea4b7e66737fbcaeaea82c769e407b33a3d16b37dea4270332e7156ac54b5e59"
+fps = 30.0
+duration_s = 30.53
+width = 1080
+height = 1920

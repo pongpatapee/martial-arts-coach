@@ -29,6 +29,7 @@ it takes seconds.
 | Detection | `detection/detectors.py` | Detector plugins, run in two stages (strikes, then relational); limb-conflict resolution |
 | Strike methods | `detection/{methods,candidates,windows,temporal,registry,bench}.py` | Interchangeable punch detectors (rules / learned / hybrid / ensemble / temporal), training, the CV benchmark |
 | Rule detectors | `events/{punches,kicks,close_range,defense,faults}.py` | Geometry-based detectors; they emit `Event`s |
+| Dataset | `dataset.py` | Clips (video + `clip.toml` + labels) under `datasets/clips/`, hash checks, run stamps |
 | Evaluation | `evaluation.py` | Labels with confidence and ignore intervals; detection F1 and type accuracy |
 | Coaching | `analysis/metrics.py`, `coaching/{knowledge,engine,llm}.py` | Metrics → rule knowledge base → prioritised feedback, drills, session plan; optional Claude rewrite |
 | Tools | `labeling/`, `render/overlay.py`, `scripts/contact_sheet.py` | Browser labeller, annotated video, labelling contact sheets |
@@ -126,7 +127,14 @@ labelling tool) is in place, so the learned methods can be re-compared as labell
 
 ## Evaluation
 
-The labels in `labels/<video>.json` record fighter, type, time and confidence.
+Footage is a dataset of clips, one folder each: `datasets/clips/<id>/` holds `video.*`
+(git-ignored), `clip.toml` (discipline, split, camera, source, and the video's SHA-256) and
+`labels.json`. Labels are tied to exact frames, so every command that scores or trains checks
+the video against the stored hash, and each run in `runs/<id>/` is stamped with the hash it was
+made from. A re-encoded video or a stale run is an error, not a silently wrong score. Clips in
+the `test` split are never used by `sparring train` by default.
+
+The labels record fighter, type, time and confidence.
 - **Generic types:** `punch`, `kick` and `strike` count toward detection only.
 - **Don't care:** low-confidence labels neither reward nor penalise a prediction.
 - **Ignore intervals** mark stretches where a fighter's actions can't be seen, e.g. the camera is

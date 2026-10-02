@@ -22,6 +22,7 @@ dependencies = [
     "rtmlib>=0.0.16",
     "scikit-learn>=1.9.1",
     "scipy>=1.18.1",
+    "tomli-w>=1.2.0",
     "typer>=0.27.2",
     "ultralytics>=8.4.165",
     "uvicorn[standard]>=0.54.0",

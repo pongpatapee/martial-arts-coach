@@ -1,9 +1,8 @@
 """Score detected events against hand labels.
 
-Label file format (labels/<video>.json):
+Label file format (datasets/clips/<clip-id>/labels.json; see sparring.dataset):
 
     {
-      "video": "test/video/boxing.mp4",
       "segment": [0.0, 52.6],             # the labelled time range
       "ignore": [{"fighter": "B", "from": 19.0, "to": 22.0, "why": "camera behind B"}],
       "events": [{"fighter": "A", "type": "jab", "t": 1.07, "confidence": "high"}, ...]

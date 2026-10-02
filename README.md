@@ -10,12 +10,11 @@ It then writes a **coaching report** for each fighter. Each point says what was 
 matters and how to fix it, with drills and the timestamps to watch.
 
 ```
-uv run sparring analyze test/video/boxing.mp4 --out runs/boxing                  # boxing (default)
-uv run sparring analyze fight.mp4 --out runs/kb --discipline kickboxing
-uv run sparring analyze fight.mp4 --out runs/mt --discipline muay_thai
+uv run sparring analyze boxing-sample                     # a clip from the dataset -> runs/boxing-sample
+uv run sparring analyze fight.mp4 --out runs/mt --discipline muay_thai   # any video file
 ```
 
-Output in the run directory:
+Disciplines: `boxing` (default), `kickboxing`, `muay_thai`. Output in the run directory:
 
 | File | Contents |
 |---|---|
@@ -92,17 +91,51 @@ pnpm test && pnpm build                     # unit tests; production build into 
 | `GET /api/jobs/{id}/poses` | Keypoints as int16 binary; shape in `X-Shape` |
 | `GET /api/jobs/{id}/video`, `GET /api/jobs/{id}/thumbnail` | Playback file (range requests) and thumbnail |
 
+## Sample footage (the clip dataset)
+
+Footage for testing, labelling and training lives in `datasets/clips/`, one folder per clip:
+
+```
+datasets/clips/boxing-homegym-2026-10-04-r2/
+  video.mp4      the footage (git-ignored)
+  clip.toml      discipline, split, camera, source, and the video's SHA-256 (committed)
+  labels.json    your hand labels, once you've made them (committed)
+```
+
+```
+uv run sparring clip add ~/Movies/round2.mp4 --discipline boxing --id boxing-homegym-2026-10-04-r2 \
+    --recorded 2026-10-04 --camera "side-on, chest height" --source "own gym, both consented"
+uv run sparring analyze boxing-homegym-2026-10-04-r2   # -> runs/boxing-homegym-2026-10-04-r2/
+uv run sparring label boxing-homegym-2026-10-04-r2     # detector suggestions included
+uv run sparring clip list                              # labels and analysis status per clip
+uv run sparring clip check                             # verify every video against its hash
+```
+
+- **Ids**: `<discipline>-<place>-<date>[-r<round>]`, lowercase with hyphens.
+- **Videos are not in git.** Clips are large and usually show other people. Back them up
+  separately (a private bucket, or DVC later). `clip check` reports any that are missing.
+- **Never re-encode or trim a clip's video.** Labels point at exact frames, so every command that
+  scores or trains checks the video's hash and refuses a changed file. Add a new clip instead.
+- **`split = "test"`** in `clip.toml` keeps a clip out of `sparring train`, so it can measure
+  how the engine does on footage it has never seen. Set it when you add the clip and leave it.
+- Runs are stamped with the video they came from; `clip list` shows `stale` if the video changed.
+
 ## Commands
+
+Commands that take a `CLIP` also accept a clip folder. `analyze` and `label` also take a plain
+video file (then `--out` / `--labels` are required); `eval` also takes `RUN LABELS`.
 
 | Command | What it does |
 |---|---|
-| `sparring analyze VIDEO --out RUN [--discipline D] [--method M]` | Full pipeline. `--from-stage events` re-runs only detection + report (seconds). |
+| `sparring analyze CLIP [--discipline D] [--method M]` | Full pipeline into `runs/<clip>`. `--from-stage events` re-runs only detection + report (seconds). |
+| `sparring clip add VIDEO --discipline D [--id ID] [--split test] ...` | Add a video to the dataset (copies it; `--move` to move). |
+| `sparring clip list` / `sparring clip check` | Status of every clip / verify videos and labels. |
 | `sparring serve [--data DIR] [--host H] [--port P]` | The web app (see above). |
 | `sparring coach RUN [--llm]` | Print each fighter's coaching summary. `--llm` writes `coach_note.md`, a coach-voice rewrite by Claude that only uses facts from the report. Needs the `llm` extra and Anthropic credentials. |
-| `sparring label VIDEO --labels labels/x.json [--run RUN]` | Local browser labelling tool. The detector's predictions from `RUN` appear as suggestions you accept with Enter. |
-| `sparring eval RUN LABELS` | Score a run against labels. |
-| `sparring bench --data RUN:LABELS [--data ...] --methods rules,ensemble,...` | Cross-validated comparison of detection methods. |
-| `sparring train --data RUN:LABELS [...] --method ensemble --out model.joblib` | Train a learned detector. Use it with `detection.model_path` in a config TOML. |
+| `sparring label CLIP` | Local browser labelling tool, saving to the clip's `labels.json`. The detector's predictions from the clip's run appear as suggestions you accept with Enter. |
+| `sparring eval CLIP` | Score the clip's run against its labels. |
+| `sparring bench [--clip ID ...] --methods rules,ensemble,...` | Cross-validated comparison of detection methods (default: all labelled clips). |
+| `sparring train --out model.joblib [--clip ID ...] [--method ensemble]` | Train a learned detector (default: labelled clips in the `train` split). Use it with `detection.model_path` in a config TOML. |
 
 To override thresholds, pass `--config tuning.toml`; its sections mirror `src/sparring/config.py`.
 
@@ -121,7 +154,7 @@ held-out 1/5. There are 75 labelled strikes.
 | learned (candidates + boosted trees) | 0.57 | 0.75 | 0.65 ± 0.08 | 0.68 |
 
 Read these numbers with the caveats below:
-- **One clip, labelled by Claude.** The labels in `labels/boxing.json` came from frame sheets and
+- **One clip, labelled by Claude.** The labels in `datasets/clips/boxing-sample/labels.json` came from frame sheets and
   are not coach-verified. The per-fold spread (±0.09) is larger than the gaps between methods.
   With about 75 labelled strikes, the learned methods can't yet beat the rules by a meaningful
   margin. The ensemble is the default because it has the best precision and type accuracy, not
@@ -137,10 +170,11 @@ Read these numbers with the caveats below:
 loop:
 
 ```
-sparring analyze new.mp4 --out runs/new
-sparring label new.mp4 --labels labels/new.json --run runs/new   # accept/fix suggestions
-sparring bench --data runs/boxing:labels/boxing.json --data runs/new:labels/new.json --methods rules,ensemble,temporal
-sparring train --data runs/boxing:labels/boxing.json --data runs/new:labels/new.json --out src/sparring/assets/boxing_punches_ensemble.joblib
+sparring clip add new.mp4 --discipline boxing --id boxing-gym-2026-10-04-r1
+sparring analyze boxing-gym-2026-10-04-r1
+sparring label boxing-gym-2026-10-04-r1                  # accept/fix suggestions
+sparring bench --methods rules,ensemble,temporal         # all labelled clips
+sparring train --out src/sparring/assets/boxing_punches_ensemble.joblib   # train-split clips
 ```
 
 ## What it detects
@@ -178,6 +212,6 @@ centre line after attacking, not checking kicks, kicks with the hands down, not 
 
 ```
 uv run pytest            # fast tests (engine on synthetic skeletons, web API with a fake pipeline)
-uv run pytest -m slow    # end-to-end on test/video/boxing.mp4 (git-ignored; downloads models)
+uv run pytest -m slow    # end-to-end on the boxing-sample clip (video not in git; downloads models)
 uv run ruff check && uv run ruff format
 ```
