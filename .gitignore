@@ -41,3 +41,4 @@ models/
 labels/*.local.json
 data/
 web/node_modules/
+*.tsbuildinfo
