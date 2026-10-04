@@ -18,6 +18,27 @@ class PoseEstimator(Protocol):
         ...
 
 
+def auto_device() -> str:
+    """ONNX Runtime device for rtmlib: CUDA when the GPU build is installed and a GPU is present."""
+    import onnxruntime as ort
+    import torch
+
+    if "CUDAExecutionProvider" in ort.get_available_providers() and torch.cuda.is_available():
+        return "cuda"
+    return "cpu"
+
+
+def _resolve_device(cfg: PoseConfig) -> str:
+    device = cfg.device or auto_device()
+    if cfg.backend == "onnxruntime" and device.startswith("cuda"):
+        import onnxruntime as ort
+
+        # The CUDA provider needs the CUDA and cuDNN libraries that ship as pip packages
+        # alongside torch; ONNX Runtime does not search for them on its own.
+        ort.preload_dlls()
+    return device
+
+
 class RTMPoseEstimator:
     def __init__(self, cfg: PoseConfig):
         from rtmlib import RTMPose
@@ -26,7 +47,7 @@ class RTMPoseEstimator:
             cfg.model_url,
             model_input_size=tuple(cfg.input_size),
             backend=cfg.backend,
-            device=cfg.device,
+            device=_resolve_device(cfg),
         )
 
     def __call__(self, image: np.ndarray, boxes: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -46,7 +67,10 @@ class RTMPose3DEstimator:
 
         self._input = tuple(cfg.input_size_3d)
         self._model = RTMPose3d(
-            cfg.model_url_3d, model_input_size=self._input, backend=cfg.backend, device=cfg.device
+            cfg.model_url_3d,
+            model_input_size=self._input,
+            backend=cfg.backend,
+            device=_resolve_device(cfg),
         )
 
     def __call__(self, image: np.ndarray, boxes: np.ndarray) -> tuple[np.ndarray, np.ndarray]:

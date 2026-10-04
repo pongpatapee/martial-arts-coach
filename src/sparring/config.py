@@ -66,7 +66,7 @@ class PoseConfig(_Section):
     )
     input_size_3d: tuple[int, int] = (288, 384)
     backend: str = "onnxruntime"
-    device: str = "cpu"
+    device: str | None = None  # None = auto (cuda > cpu)
 
 
 class CleanConfig(_Section):
